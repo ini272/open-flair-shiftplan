@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  fastapi:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # Mount current directory for live reloading
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/jaeger
+    ports:
+      - "16686:16686"  # UI port      - "16686:16686"  # UI port
