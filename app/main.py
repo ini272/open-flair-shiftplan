@@ -4,6 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 
 from app.tracing import setup_tracing
+from app.database import engine, Base
+from app.routes import user
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI with metadata
 app = FastAPI(title="FastAPI Tracing Demo", 
@@ -12,6 +17,9 @@ app = FastAPI(title="FastAPI Tracing Demo",
 
 # Set up tracing
 tracer = setup_tracing(app)
+
+# Include routers
+app.include_router(user.router)
 
 # Middleware to measure request processing time
 @app.middleware("http")
@@ -36,19 +44,3 @@ async def favicon():
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
-
-# Item endpoint with path parameter
-@app.get("/items/{item_id}")
-async def read_item(item_id: int):
-    # Create a custom span for this operation
-    # This allows us to track specific parts of our code execution
-    with tracer.start_as_current_span("processing-item") as span:
-        # Add some attributes to the span
-        # These will be visible in the Jaeger UI and can be used for filtering
-        span.set_attribute("item.id", item_id)
-        
-        # Simulate some processing time
-        # In a real app, this might be a database query or external API call
-        time.sleep(0.1)
-        
-        return {"item_id": item_id, "name": f"Item {item_id}"}
