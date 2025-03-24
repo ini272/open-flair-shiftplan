@@ -27,25 +27,42 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
         span.set_attribute("user.email", user_in.email)
         span.set_attribute("user.username", user_in.username)
         
+        # Add event: Starting user creation process
+        span.add_event("starting_user_creation")
+        
         # Check if email is already registered
+        span.add_event("checking_email_uniqueness")
         user_by_email = user_crud.get_by_email(db, email=user_in.email)
         if user_by_email:
+            span.add_event("email_already_exists", {
+                "email": user_in.email
+            })
             span.set_attribute("error", "Email already registered")
             raise HTTPException(
                 status_code=400, detail="Email already registered"
             )
         
         # Check if username is already taken    
+        span.add_event("checking_username_uniqueness")
         user_by_username = user_crud.get_by_username(db, username=user_in.username)
         if user_by_username:
+            span.add_event("username_already_exists", {
+                "username": user_in.username
+            })
             span.set_attribute("error", "Username already taken")
             raise HTTPException(
                 status_code=400, detail="Username already taken"
             )
         
-        # Create the user    
-        return user_crud.create(db=db, obj_in=user_in)
-
+        # Create the user
+        span.add_event("creating_user_in_database")
+        user = user_crud.create(db=db, obj_in=user_in)
+        
+        span.add_event("user_created_successfully", {
+            "user_id": user.id
+        })
+        
+        return user
 @router.get("/", response_model=List[User])
 def read_users(
     skip: int = 0, 
