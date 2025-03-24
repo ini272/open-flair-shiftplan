@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional, Union
 from sqlalchemy.orm import Session
-import hashlib
 
 from app.crud.base import CRUDBase
 from app.models.user import User
@@ -22,16 +21,12 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
     
     def create(self, db: Session, *, obj_in: UserCreate) -> User:
         """
-        Create a new user with password hashing
+        Create a new user
         """
-        # Hash the password
-        hashed_password = hashlib.sha256(obj_in.password.encode()).hexdigest()
-        
         # Create a dict of user data
         db_obj = User(
             email=obj_in.email,
             username=obj_in.username,
-            hashed_password=hashed_password,
             is_active=True
         )
         
@@ -49,18 +44,12 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
         obj_in: Union[UserUpdate, Dict[str, Any]]
     ) -> User:
         """
-        Update a user, handling password hashing if needed
+        Update a user
         """
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
             update_data = obj_in.dict(exclude_unset=True)
-            
-        # Hash password if it's being updated
-        if "password" in update_data:
-            hashed_password = hashlib.sha256(update_data["password"].encode()).hexdigest()
-            update_data["hashed_password"] = hashed_password
-            del update_data["password"]
             
         return super().update(db, db_obj=db_obj, obj_in=update_data)
 

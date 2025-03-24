@@ -11,11 +11,9 @@ class UserCreate(UserBase):
     """Schema for creating a user"""
     email: EmailStr
     username: str
-    password: str
 
 class UserUpdate(UserBase):
     """Schema for updating a user"""
-    password: Optional[str] = None
 
 class User(UserBase):
     """Schema for returning user data"""
