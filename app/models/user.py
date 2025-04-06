@@ -27,3 +27,4 @@ class User(Base):
     
     # Define relationship to Group
     group = relationship("Group", back_populates="users")
+    shifts = relationship("Shift", secondary="shift_users", back_populates="users")

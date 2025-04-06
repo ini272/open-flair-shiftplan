@@ -83,14 +83,134 @@ sequenceDiagram
     end
 ```
 
-## Tracing Implementation
+## Debuggability and Observability
 
-Our application uses OpenTelemetry to trace requests through the system. Key aspects:
+Our application is designed with debuggability and observability as core principles, ensuring issues can be quickly identified and resolved.
 
-1. **Span Creation**: Each route handler creates a span for the operation
-2. **Events**: Important points in the request lifecycle are marked with events
-3. **Attributes**: Spans include attributes for query parameters, results, and errors
-4. **Visualization**: All traces are sent to Jaeger for visualization and analysis
+### Testing Strategy
+
+```mermaid
+graph TD
+    A[Test Types] --> B[Unit Tests]
+    A --> C[Integration Tests]
+    A --> D[API Tests]
+    
+    B --> B1[CRUD Operations]
+    B --> B2[Model Validations]
+    
+    C --> C1[Database Interactions]
+    C --> C2[Authentication Flows]
+    
+    D --> D1[Endpoint Responses]
+    D --> D2[Error Handling]
+    D --> D3[Authentication/Authorization]
+    
+    E[Test Infrastructure] --> E1[In-Memory Database]
+    E --> E2[Mocked Tracers]
+    E --> E3[Test Fixtures]
+    E --> E4[Automated CI]
+```
+
+Our testing approach ensures code quality and prevents regressions:
+
+- **Test Coverage**: Tests cover all critical paths including user operations, authentication flows, and group management
+- **Isolation**: Each test runs with a clean database state
+- **Fixtures**: Reusable components provide database sessions, authenticated clients, and test data
+- **Mocking**: External dependencies like tracers are mocked to ensure tests are reliable and fast
+
+### Tracing Implementation
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI Endpoint
+    participant Handler as Route Handler
+    participant CRUD as CRUD Operation
+    participant DB as Database
+    participant Jaeger as Jaeger UI
+    
+    Client->>API: HTTP Request
+    API->>Jaeger: Create Request Span
+    API->>Handler: Route to Handler
+    
+    Handler->>Jaeger: Create Operation Span
+    Handler->>Jaeger: Add Operation Attributes
+    
+    Handler->>CRUD: Call CRUD Method
+    CRUD->>DB: Execute Query
+    DB->>CRUD: Return Results
+    
+    Handler->>Jaeger: Add Result Attributes
+    Handler->>Jaeger: Add Events (success/error)
+    
+    Handler->>API: Return Response
+    API->>Jaeger: End Request Span
+    API->>Client: HTTP Response
+```
+
+Our tracing strategy provides deep visibility into application behavior:
+
+- **Hierarchical Spans**: Each operation creates a span within the request span
+- **Rich Attributes**: Spans include query parameters, entity IDs, and result metadata
+- **Event Timeline**: Key points in request processing are marked with timestamped events
+- **Error Tracking**: Exceptions and error conditions are captured with context
+- **Performance Metrics**: Execution times are recorded for performance analysis
+
+### Debugging Workflow
+
+```mermaid
+flowchart TD
+    A[Issue Reported] --> B{Error or Performance?}
+    
+    B -->|Error| C[Check Logs]
+    B -->|Performance| D[Check Traces]
+    
+    C --> E[Identify Error Type]
+    D --> F[Identify Slow Component]
+    
+    E --> G[Run Targeted Tests]
+    F --> H[Profile Component]
+    
+    G --> I[Fix and Verify]
+    H --> I
+    
+    I --> J[Add Regression Test]
+    J --> K[Deploy Fix]
+```
+
+Our debugging workflow is streamlined through:
+
+- **Structured Logging**: Consistent log format with correlation IDs linking to traces
+- **Trace Visualization**: Jaeger UI provides timeline views of request processing
+- **Test Reproduction**: Issues can be reproduced and verified with targeted tests
+- **Middleware Insights**: Request processing times are captured by middleware
+
+### Group Management Visualization
+
+```mermaid
+graph TD
+    User[User] -->|belongs to| Group[Group]
+    Group -->|contains| Users[Multiple Users]
+    
+    API[API Endpoints] --> CreateG[Create Group]
+    API --> ListG[List Groups]
+    API --> UpdateG[Update Group]
+    API --> DeleteG[Delete Group]
+    API --> AddUser[Add User to Group]
+    API --> RemoveUser[Remove User from Group]
+    
+    CreateG --> Validation[Name Uniqueness]
+    AddUser --> UserCheck[User Exists]
+    AddUser --> GroupCheck[Group Exists]
+    RemoveUser --> MembershipCheck[User in Group]
+```
+
+The group management system provides:
+
+- **One-to-Many Relationship**: Each user belongs to at most one group
+- **Validation Rules**: Enforces unique group names and valid references
+- **Flexible Membership**: Users can be added to or removed from groups
+- **Soft Deletion**: Groups can be marked inactive without losing data
 
 ## Authentication Implementation
 
@@ -124,15 +244,6 @@ The application uses a token-based authentication system:
 
 6. **Authentication Check**: The `/auth/check` endpoint allows clients to verify their authentication status
 
-## Testing Strategy
-
-The application includes a comprehensive test suite using pytest:
-
-1. **Test Database**: Tests use an in-memory SQLite database to isolate from the production database
-2. **Fixtures**: Reusable test fixtures provide database sessions, test clients, and authentication
-3. **Mocking**: The OpenTelemetry tracer is mocked to prevent connection attempts to Jaeger during tests
-4. **Test Coverage**: Tests cover user operations, authentication flows, and protected routes
-
 ## Deployment
 
 The application is deployed using Docker Compose with the following services:
@@ -141,3 +252,41 @@ The application is deployed using Docker Compose with the following services:
 2. **Jaeger**: For collecting and visualizing traces
 
 Environment variables and volume mounts are configured to ensure proper communication between services.
+
+## Database Implementation Details
+
+### DateTime Handling
+
+Our application uses SQLite as the database backend, which requires special handling for datetime objects:
+
+1. **Issue**: SQLite's DateTime type only accepts Python datetime objects, not string representations.
+
+2. **Challenge**: When processing API requests, datetime values arrive as strings and need conversion.
+
+3. **Solution**: We implemented a two-part approach:
+   - **Schema Validation**: Pydantic validators in schemas (e.g., `ShiftCreate`) convert string datetimes to Python datetime objects
+   - **CRUD Method Override**: Custom implementation of the `create` method in `CRUDShift` preserves datetime objects by avoiding `jsonable_encoder`
+
+4. **Implementation Example**:
+   ```python
+   # In app/schemas/shift.py
+   @validator('start_time', 'end_time', pre=True)
+   def parse_datetime(cls, value):
+       if isinstance(value, str):
+           # Convert string to datetime object
+           return datetime.fromisoformat(value.replace('Z', '+00:00'))
+       return value
+   
+   # In app/crud/shift.py
+   def create(self, db: Session, *, obj_in: ShiftCreate) -> Shift:
+       # Direct attribute access preserves datetime objects
+       db_obj = Shift(
+           title=obj_in.title,
+           start_time=obj_in.start_time,  # Remains a datetime object
+           end_time=obj_in.end_time,      # Remains a datetime object
+           # ...
+       )
+       # ...
+   ```
+
+This approach ensures proper handling of datetime values throughout the application lifecycle, from API request to database storage.

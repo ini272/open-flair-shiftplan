@@ -22,3 +22,4 @@ class Group(Base):
     # Define the relationship to users
     # This creates the link but the actual foreign key is in the User model
     users = relationship("User", back_populates="group")
+    shifts = relationship("Shift", secondary="shift_groups", back_populates="groups")
