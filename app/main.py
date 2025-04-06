@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 
 from app.tracing import setup_tracing
 from app.database import engine, Base
-from app.routes import user, auth, protected  # Updated import
+from app.routes import user, auth, protected, group
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -22,6 +22,7 @@ tracer = setup_tracing(app)
 app.include_router(user.router)
 app.include_router(auth.router)
 app.include_router(protected.router)
+app.include_router(group.router)
 
 # Middleware to measure request processing time
 @app.middleware("http")

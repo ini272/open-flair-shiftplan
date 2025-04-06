@@ -1,12 +1,11 @@
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Response, Cookie
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from datetime import datetime, timedelta
 from typing import Optional
 
 from app.dependencies import get_tracer, get_db
 from app.crud.token import token as token_crud
+from app.schemas.token import TokenCreate, TokenResponse
 
 # Create a router for authentication endpoints
 router = APIRouter(
@@ -17,23 +16,6 @@ router = APIRouter(
 
 # Get the tracer for this module
 tracer = get_tracer()
-
-class TokenCreate(BaseModel):
-    """Schema for creating a new token"""
-    name: str
-    expires_in_days: Optional[int] = None
-
-class TokenResponse(BaseModel):
-    """Schema for token response"""
-    id: int
-    name: str
-    token: str
-    created_at: datetime
-    expires_at: Optional[datetime] = None
-    is_active: bool
-    
-    class Config:
-        orm_mode = True
 
 @router.post("/tokens", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def create_token(
