@@ -21,6 +21,7 @@ class User(UserBase):
     email: EmailStr
     username: str
     is_active: bool
+    group_id: Optional[int] = None
     
     class Config:
         orm_mode = True

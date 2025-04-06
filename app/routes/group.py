@@ -55,7 +55,7 @@ def read_groups(
         span.set_attribute("query.skip", skip)
         span.set_attribute("query.limit", limit)
         
-        groups = group_crud.get_active(db, skip=skip, limit=limit)
+        groups = group_crud.get_multi(db, skip=skip, limit=limit)
         span.set_attribute("result.count", len(groups))
         return groups
 
