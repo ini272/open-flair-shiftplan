@@ -29,16 +29,28 @@ def create_group(
     with tracer.start_as_current_span("create-group") as span:
         span.set_attribute("group.name", group_in.name)
         
+        # Add event: Starting group creation process
+        span.add_event("starting_group_creation")
+        
         # Check if group with this name already exists
+        span.add_event("checking_name_uniqueness")
         db_group = group_crud.get_by_name(db, name=group_in.name)
         if db_group:
+            span.add_event("group_name_already_exists", {
+                "name": group_in.name
+            })
             span.set_attribute("error", "Group name already exists")
             raise HTTPException(
                 status_code=400, detail="Group with this name already exists"
             )
         
         # Create the group
+        span.add_event("creating_group_in_database")
         group = group_crud.create(db=db, obj_in=group_in)
+        
+        span.add_event("group_created_successfully", {
+            "group_id": group.id
+        })
         span.set_attribute("group.id", group.id)
         return group
 
@@ -136,20 +148,32 @@ def add_user_to_group(
         span.set_attribute("group.id", group_id)
         span.set_attribute("user.id", user_id)
         
+        span.add_event("starting_user_group_assignment")
+        
         # Check if group exists
+        span.add_event("checking_group_exists")
         group = group_crud.get(db, id=group_id)
         if not group:
+            span.add_event("group_not_found", {"group_id": group_id})
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
         
         # Check if user exists
+        span.add_event("checking_user_exists")
         user = user_crud.get(db, id=user_id)
         if not user:
+            span.add_event("user_not_found", {"user_id": user_id})
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
         
         # Add user to group
+        span.add_event("assigning_user_to_group")
         updated_user = group_crud.add_user_to_group(db, group_id=group_id, user_id=user_id)
+        
+        span.add_event("user_assigned_successfully", {
+            "user_id": user_id,
+            "group_id": group_id
+        })
         return updated_user
 
 @router.delete("/users/{user_id}", response_model=User)
