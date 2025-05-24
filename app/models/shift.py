@@ -32,6 +32,11 @@ class Shift(Base):
     # Define relationships - many-to-many with users and groups
     users = relationship("User", secondary="shift_users", back_populates="shifts")
     groups = relationship("Group", secondary="shift_groups", back_populates="shifts")
+    preferred_by_users = relationship(
+        "User", 
+        secondary="user_shift_preferences",
+        back_populates="shift_preferences"
+    )
     
     @property
     def current_user_count(self):

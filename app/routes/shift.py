@@ -315,3 +315,89 @@ def remove_group_from_shift(
         )
         
         return {"message": "Group removed from shift successfully"}
+
+@router.post("/generate-plan", status_code=status.HTTP_200_OK)
+def generate_shift_plan(
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Generate a shift plan by randomly assigning users to shifts based on their preferences.
+    
+    This endpoint:
+    1. Gets all shifts for the festival period (Aug 6-10, 2025)
+    2. For each shift, finds users who have opted in (set preference to can_work=True)
+    3. Randomly assigns users to shifts respecting capacity limits
+    """
+    with tracer.start_as_current_span("generate-shift-plan") as span:
+        # Define festival date range (August 6-10, 2025)
+        start_time = datetime(2025, 8, 6, 0, 0, 0)
+        end_time = datetime(2025, 8, 11, 0, 0, 0)  # Day after festival ends
+        
+        span.set_attribute("festival.start_time", start_time.isoformat())
+        span.set_attribute("festival.end_time", end_time.isoformat())
+        
+        # Get all shifts for the festival period
+        shifts = shift_crud.get_by_time_range(
+            db, start_time=start_time, end_time=end_time
+        )
+        
+        span.set_attribute("shifts.count", len(shifts))
+        span.add_event("fetched_festival_shifts", {"count": len(shifts)})
+        
+        # Import needed for randomization
+        import random
+        
+        # Import preference CRUD
+        from app.crud.preferences import preference as preference_crud
+        
+        # Track assignments for reporting
+        assignments = []
+        
+        # Process each shift
+        for shift in shifts:
+            span.add_event("processing_shift", {"shift_id": shift.id, "title": shift.title})
+            
+            # Get all users who have opted in for this shift
+            eligible_user_ids = preference_crud.get_users_for_shift(
+                db, shift_id=shift.id, can_work=True
+            )
+            
+            # Get user objects
+            from app.crud.user import user as user_crud
+            eligible_users = [user_crud.get(db, id=user_id) for user_id in eligible_user_ids]
+            eligible_users = [user for user in eligible_users if user is not None]
+            
+            # Filter out users already assigned to this shift
+            eligible_users = [user for user in eligible_users if user not in shift.users]
+            
+            span.add_event("eligible_users", {"count": len(eligible_users)})
+            
+            # Calculate how many slots are available
+            available_slots = shift.capacity - len(shift.users) if shift.capacity else len(eligible_users)
+            
+            # If no slots available or no eligible users, skip this shift
+            if available_slots <= 0 or not eligible_users:
+                span.add_event("skipping_shift", {
+                    "reason": "no_slots" if available_slots <= 0 else "no_eligible_users"
+                })
+                continue
+            
+            # Randomly select users to assign
+            selected_users = random.sample(eligible_users, min(available_slots, len(eligible_users)))
+            
+            span.add_event("selected_users", {"count": len(selected_users)})
+            
+            # Assign selected users to the shift
+            for user in selected_users:
+                shift_crud.add_user_to_shift(db, shift_id=shift.id, user_id=user.id)
+                assignments.append({
+                    "shift_id": shift.id,
+                    "shift_title": shift.title,
+                    "user_id": user.id,
+                    "username": user.username
+                })
+            
+            span.add_event("users_assigned", {"count": len(selected_users)})
+        
+        span.set_attribute("assignments.count", len(assignments))
+        return {"message": f"Successfully generated shift plan with {len(assignments)} assignments", "assignments": assignments}

@@ -2,10 +2,11 @@ import time
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.tracing import setup_tracing
 from app.database import engine, Base
-from app.routes import user, auth, protected, group, shift
+from app.routes import user, auth, protected, group, shift, preferences
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -18,12 +19,22 @@ app = FastAPI(title="FastAPI Tracing Demo",
 # Set up tracing
 tracer = setup_tracing(app)
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # React app's address
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Include routers
 app.include_router(user.router)
 app.include_router(auth.router)
 app.include_router(protected.router)
 app.include_router(group.router)
 app.include_router(shift.router)
+app.include_router(preferences.router)
 
 # Middleware to measure request processing time
 @app.middleware("http")
