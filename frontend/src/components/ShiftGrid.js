@@ -1,34 +1,53 @@
 import React, { useMemo } from 'react';
 import { 
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box,
+  CircularProgress
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 
-// Styled component for shift cells
-const ShiftCell = styled(Box)(({ theme, selected }) => ({
+// Enhanced styled component for shift cells with more pronounced visual feedback
+const ShiftCell = styled(Box)(({ theme, selected, isPending }) => ({
   padding: theme.spacing(1.5),
   margin: theme.spacing(0.5),
   borderRadius: theme.shape.borderRadius,
   backgroundColor: selected ? theme.palette.success.light : theme.palette.error.light,
   color: selected ? theme.palette.success.contrastText : theme.palette.error.contrastText,
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+  cursor: isPending ? 'wait' : 'pointer',
+  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+  boxShadow: isPending 
+    ? '0 0 0 2px rgba(25, 118, 210, 0.5)' 
+    : '0 1px 3px rgba(0,0,0,0.12)',
   '&:hover': {
-    boxShadow: '0 3px 6px rgba(0,0,0,0.16)',
-    opacity: 0.9,
+    boxShadow: isPending 
+      ? '0 0 0 2px rgba(25, 118, 210, 0.5)'
+      : '0 4px 8px rgba(0,0,0,0.2)',
+    transform: isPending ? 'none' : 'translateY(-2px)',
   },
   display: 'flex',
-  justifyContent: 'center',
+  justifyContent: 'space-between',
   alignItems: 'center',
   minHeight: '40px',
   fontWeight: 500,
+  // More pronounced visual feedback for pending operations
+  opacity: isPending ? 0.8 : 1,
+  position: 'relative',
+  overflow: 'hidden',
+  // Add a subtle pulse animation when pending
+  animation: isPending ? 'pulse 1.5s infinite' : 'none',
+  '@keyframes pulse': {
+    '0%': { opacity: 0.7 },
+    '50%': { opacity: 0.9 },
+    '100%': { opacity: 0.7 }
+  }
 }));
 
 const ShiftGrid = ({ 
   shifts, 
   userPreferences, 
-  onTogglePreference 
+  onTogglePreference,
+  pendingOperations = {}
 }) => {
   // Extract unique days and time slots from the shifts
   const { days, timeSlots } = useMemo(() => {
@@ -97,6 +116,20 @@ const ShiftGrid = ({
     return userPreferences.includes(shiftId);
   }
 
+  // Check if a shift has a pending operation
+  function isShiftPending(shiftId) {
+    return pendingOperations[shiftId] !== undefined;
+  }
+
+  // Handle shift click with debounce to prevent double-clicks
+  const handleShiftClick = (shiftId) => {
+    // If already pending, don't allow another click
+    if (isShiftPending(shiftId)) return;
+    
+    // Call the toggle preference function
+    onTogglePreference(shiftId);
+  };
+
   return (
     <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
       <Table sx={{ minWidth: 650 }}>
@@ -122,13 +155,27 @@ const ShiftGrid = ({
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {cellShifts.map(shift => {
                         const preferred = isPreferred(shift.id);
+                        const isPending = isShiftPending(shift.id);
+                        
                         return (
                           <ShiftCell
                             key={shift.id}
                             selected={preferred}
-                            onClick={() => onTogglePreference(shift.id)}
+                            isPending={isPending}
+                            onClick={() => handleShiftClick(shift.id)}
                           >
-                            {shift.title}
+                            <span>{shift.title}</span>
+                            {isPending ? (
+                              <CircularProgress 
+                                size={16} 
+                                thickness={5} 
+                                sx={{ ml: 1 }} 
+                              />
+                            ) : (
+                              preferred ? 
+                                <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
+                                <CloseIcon fontSize="small" sx={{ ml: 1 }} />
+                            )}
                           </ShiftCell>
                         );
                       })}

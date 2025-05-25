@@ -3,15 +3,19 @@ import datetime
 
 # Configuration
 API_URL = "http://localhost:8000"
-TOKEN = "3142f655-3724-422f-bc2c-c1c0e2de2b07"  # Replace with a valid admin token
+TOKEN = "a6c095fa-720b-45a6-8b65-f34362c97ee7"  # Replace with a valid admin token
 FESTIVAL_START = datetime.datetime(2025, 8, 6)
 FESTIVAL_END = datetime.datetime(2025, 8, 11)  # Day after festival ends
 LOCATIONS = ["Weinzelt", "Bierwagen"]
 SHIFT_TYPES = [
-    {"name": "Morning", "start_hour": 8, "end_hour": 12},
-    {"name": "Afternoon", "start_hour": 12, "end_hour": 16},
-    {"name": "Evening", "start_hour": 16, "end_hour": 20},
-    {"name": "Night", "start_hour": 20, "end_hour": 0}
+    {"start_hour": 8, "end_hour": 10},
+    {"start_hour": 10, "end_hour": 12},
+    {"start_hour": 12, "end_hour": 14},
+    {"start_hour": 14, "end_hour": 16},
+    {"start_hour": 16, "end_hour": 18},
+    {"start_hour": 18, "end_hour": 20},
+    {"start_hour": 20, "end_hour": 22},
+    {"start_hour": 22, "end_hour": 0}
 ]
 
 # Login with token
@@ -39,10 +43,10 @@ while current_date < FESTIVAL_END:
             else:
                 end_time = current_date.replace(hour=shift_type["end_hour"], minute=0)
             
-            # Create shift
+            # Create shift with simplified title
             shift_data = {
-                "title": f"{location} - {shift_type['name']}",
-                "description": f"Shift at {location} during {shift_type['name']} hours",
+                "title": location,
+                "description": f"Shift at {location} from {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}",
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
                 "capacity": 3  # Adjust as needed
@@ -51,7 +55,7 @@ while current_date < FESTIVAL_END:
             response = session.post(f"{API_URL}/shifts/", json=shift_data)
             if response.status_code == 201:
                 shifts_created += 1
-                print(f"Created shift: {shift_data['title']} on {current_date.date()}")
+                print(f"Created shift: {shift_data['title']} on {current_date.date()} from {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}")
             else:
                 print(f"Failed to create shift: {response.text}")
     

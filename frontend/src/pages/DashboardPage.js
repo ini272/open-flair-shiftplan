@@ -12,6 +12,8 @@ const DashboardPage = () => {
   const [userPreferences, setUserPreferences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  // Add state for pending operations
+  const [pendingOperations, setPendingOperations] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -66,39 +68,76 @@ const DashboardPage = () => {
   const handleTogglePreference = async (shiftId) => {
     if (!user) return;
     
-    try {
-      const isPreferred = userPreferences.includes(shiftId);
-      
-      if (isPreferred) {
-        // Remove user from shift
-        await shiftService.removeUserFromShift(shiftId, user.id);
-        setUserPreferences(prev => prev.filter(id => id !== shiftId));
+    // Check if there's already a pending operation for this shift
+    if (pendingOperations[shiftId]) return;
+    
+    // Create a unique operation ID
+    const operationId = `toggle-${shiftId}-${Date.now()}`;
+    
+    // Update pending operations immediately
+    setPendingOperations(prev => ({
+      ...prev,
+      [shiftId]: operationId
+    }));
+    
+    // Determine if we're adding or removing the preference
+    const isPreferred = userPreferences.includes(shiftId);
+    
+    // Optimistically update the UI immediately
+    setUserPreferences(prev => 
+      isPreferred 
+        ? prev.filter(id => id !== shiftId) 
+        : [...prev, shiftId]
+    );
+    
+    // Use setTimeout to make the API call feel even more responsive
+    // This allows the UI to update before the API call starts
+    setTimeout(async () => {
+      try {
+        if (isPreferred) {
+          // Remove user from shift
+          await shiftService.removeUserFromShift(shiftId, user.id);
+          setSnackbar({
+            open: true,
+            message: 'Successfully opted out of shift',
+            severity: 'success'
+          });
+        } else {
+          // Add user to shift
+          await shiftService.addUserToShift({
+            shift_id: shiftId,
+            user_id: user.id
+          });
+          setSnackbar({
+            open: true,
+            message: 'Successfully opted in to shift',
+            severity: 'success'
+          });
+        }
+      } catch (error) {
+        console.error('Error updating shift preference:', error);
+        
+        // Revert the optimistic update
+        setUserPreferences(prev => 
+          isPreferred 
+            ? [...prev, shiftId]
+            : prev.filter(id => id !== shiftId)
+        );
+        
         setSnackbar({
           open: true,
-          message: 'Successfully opted out of shift',
-          severity: 'success'
+          message: 'Failed to update shift preference. Please try again.',
+          severity: 'error'
         });
-      } else {
-        // Add user to shift
-        await shiftService.addUserToShift({
-          shift_id: shiftId,
-          user_id: user.id
-        });
-        setUserPreferences(prev => [...prev, shiftId]);
-        setSnackbar({
-          open: true,
-          message: 'Successfully opted in to shift',
-          severity: 'success'
+      } finally {
+        // Clear the pending operation
+        setPendingOperations(prev => {
+          const newPending = { ...prev };
+          delete newPending[shiftId];
+          return newPending;
         });
       }
-    } catch (error) {
-      console.error('Error updating shift preference:', error);
-      setSnackbar({
-        open: true,
-        message: 'Failed to update shift preference. Please try again.',
-        severity: 'error'
-      });
-    }
+    }, 10); // Very short timeout to ensure UI updates first
   };
 
   const handleCloseSnackbar = () => {
@@ -147,7 +186,8 @@ const DashboardPage = () => {
       <ShiftGrid 
         shifts={shifts} 
         userPreferences={userPreferences} 
-        onTogglePreference={handleTogglePreference} 
+        onTogglePreference={handleTogglePreference}
+        pendingOperations={pendingOperations}
       />
 
       <Snackbar
