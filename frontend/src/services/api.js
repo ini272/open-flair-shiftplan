@@ -48,6 +48,15 @@ export const shiftService = {
   addGroupToShift: (data) => api.post('/shifts/groups/', data),
   removeUserFromShift: (shiftId, userId) => api.delete(`/shifts/users/${shiftId}/${userId}`),
   removeGroupFromShift: (shiftId, groupId) => api.delete(`/shifts/groups/${shiftId}/${groupId}`),
+  // Add new opt-out endpoints
+  optOutUser: (data) => api.post('/shifts/user-opt-out', data),
+  optInUser: (data) => api.post('/shifts/user-opt-in', data),
+  optOutGroup: (data) => api.post('/shifts/group-opt-out', data),
+  optInGroup: (data) => api.post('/shifts/group-opt-in', data),
+  checkOptOutStatus: (shiftId, userId) => api.get(`/shifts/opt-out-status/${shiftId}/${userId}`),
+  getUserOptOuts: (userId) => api.get(`/shifts/user-opt-outs/${userId}`),
+  getGroupOptOuts: (groupId) => api.get(`/shifts/group-opt-outs/${groupId}`),
+  getAvailableUsers: (shiftId) => api.get(`/shifts/available-users/${shiftId}`),
 };
 
 // Preference services

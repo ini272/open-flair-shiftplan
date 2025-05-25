@@ -1,12 +1,21 @@
 from typing import List, Optional, Union, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, select
 
+from app.dependencies import get_tracer
 from app.crud.base import CRUDBase
 from app.models.shift import Shift
-from app.models.associations import shift_users, shift_groups
+from app.models.user import User
+from app.models.group import Group
+from app.models.associations import (
+    shift_users, shift_groups, 
+    shift_user_opt_outs, shift_group_opt_outs
+)
 from app.schemas.shift import ShiftCreate, ShiftUpdate
+
+# Get the tracer for this module
+tracer = get_tracer()
 
 class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
     """
@@ -218,6 +227,281 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
+    def opt_out_user(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int,
+        user_id: int
+    ) -> Optional[Shift]:
+        """
+        Opt a user out of a shift.
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+            user_id: ID of the user to opt out
+        
+        Returns:
+            Updated shift object or None if not found
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return None
+            
+        # Get the user from the database
+        from app.crud.user import user as user_crud
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            return None
+            
+        # Check if user is in a group - if so, they can't have individual opt-outs
+        if user.group_id is not None:
+            return None
+            
+        # Add user to opted_out_users
+        shift.opted_out_users.append(user)
+        db.commit()
+        db.refresh(shift)
+        return shift
+
+    def opt_in_user(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int,
+        user_id: int
+    ) -> Optional[Shift]:
+        """
+        Opt a user back into a shift.
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+            user_id: ID of the user to opt in
+        
+        Returns:
+            Updated shift object or None if not found
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return None
+            
+        # Get the user from the database
+        from app.crud.user import user as user_crud
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            return None
+            
+        # Check if user is in a group - if so, they can't have individual opt-outs
+        if user.group_id is not None:
+            return None
+            
+        # Remove user from opted_out_users
+        if user in shift.opted_out_users:
+            shift.opted_out_users.remove(user)
+            db.commit()
+            db.refresh(shift)
+        return shift
+
+    def opt_out_group(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int,
+        group_id: int
+    ) -> Optional[Shift]:
+        """
+        Opt a group out of a shift.
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+            group_id: ID of the group to opt out
+        
+        Returns:
+            Updated shift object or None if not found
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return None
+            
+        # Get the group from the database
+        from app.crud.group import group as group_crud
+        group = group_crud.get(db, id=group_id)
+        if not group:
+            return None
+            
+        # Add group to opted_out_groups
+        shift.opted_out_groups.append(group)
+        db.commit()
+        db.refresh(shift)
+        return shift
+
+    def opt_in_group(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int,
+        group_id: int
+    ) -> Optional[Shift]:
+        """
+        Opt a group back into a shift.
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+            group_id: ID of the group to opt in
+        
+        Returns:
+            Updated shift object or None if not found
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return None
+            
+        # Get the group from the database
+        from app.crud.group import group as group_crud
+        group = group_crud.get(db, id=group_id)
+        if not group:
+            return None
+            
+        # Remove group from opted_out_groups
+        if group in shift.opted_out_groups:
+            shift.opted_out_groups.remove(group)
+            db.commit()
+            db.refresh(shift)
+        return shift
+
+    def is_user_opted_out(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int,
+        user_id: int
+    ) -> bool:
+        """
+        Check if a user is opted out of a shift.
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+            user_id: ID of the user to check
+        
+        Returns:
+            True if the user is opted out, False otherwise
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return False
+            
+        # Get the user from the database
+        from app.crud.user import user as user_crud
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            return False
+            
+        # Check if user is directly opted out
+        if user in shift.opted_out_users:
+            return True
+            
+        # Check if user's group is opted out
+        if user.group_id is not None:
+            for group in shift.opted_out_groups:
+                if group.id == user.group_id:
+                    return True
+                    
+        return False
+
+    def get_user_opt_outs(
+        self, 
+        db: Session, 
+        *, 
+        user_id: int
+    ) -> List[Shift]:
+        """
+        Get all shifts a user is opted out of.
+        
+        Args:
+            db: Database session
+            user_id: ID of the user
+        
+        Returns:
+            List of shifts the user is opted out of
+        """
+        # Get the user from the database
+        from app.crud.user import user as user_crud
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            return []
+            
+        # Get shifts the user is directly opted out of
+        shifts = user.opted_out_shifts
+        
+        # If user is in a group, add shifts the group is opted out of
+        if user.group_id is not None:
+            for shift in user.group.opted_out_shifts:
+                if shift not in shifts:
+                    shifts.append(shift)
+                    
+        return shifts
+
+    def get_group_opt_outs(
+        self, 
+        db: Session, 
+        *, 
+        group_id: int
+    ) -> List[Shift]:
+        """
+        Get all shifts a group is opted out of.
+        
+        Args:
+            db: Database session
+            group_id: ID of the group
+        
+        Returns:
+            List of shifts the group is opted out of
+        """
+        # Get the group from the database
+        from app.crud.group import group as group_crud
+        group = group_crud.get(db, id=group_id)
+        if not group:
+            return []
+            
+        return group.opted_out_shifts
+
+    def get_available_users(
+        self, 
+        db: Session, 
+        *, 
+        shift_id: int
+    ) -> List[User]:
+        """
+        Get all users available for a shift (not opted out).
+        
+        Args:
+            db: Database session
+            shift_id: ID of the shift
+        
+        Returns:
+            List of users available for the shift
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return []
+            
+        # Get all users
+        from app.crud.user import user as user_crud
+        all_users = user_crud.get_multi(db)
+        
+        # Filter out opted-out users
+        available_users = []
+        for user in all_users:
+            if not self.is_user_opted_out(db, shift_id=shift_id, user_id=user.id):
+                available_users.append(user)
+                
+        return available_users
 
 # Create a singleton instance
 shift = CRUDShift(Shift)

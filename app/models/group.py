@@ -23,3 +23,6 @@ class Group(Base):
     # This creates the link but the actual foreign key is in the User model
     users = relationship("User", back_populates="group")
     shifts = relationship("Shift", secondary="shift_groups", back_populates="groups")
+    
+    # Relationship for shifts this group has opted out of
+    opted_out_shifts = relationship("Shift", secondary="shift_group_opt_outs", back_populates="opted_out_groups")

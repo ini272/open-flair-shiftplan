@@ -111,8 +111,8 @@ const ShiftGrid = ({
     });
   }
 
-  // Check if a shift is in the user's preferences
-  function isPreferred(shiftId) {
+  // Check if a shift is in the user's available shifts
+  function isAvailable(shiftId) {
     return userPreferences.includes(shiftId);
   }
 
@@ -154,13 +154,13 @@ const ShiftGrid = ({
                   <TableCell key={`${day}-${timeSlot}`} align="center" sx={{ padding: 1 }}>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {cellShifts.map(shift => {
-                        const preferred = isPreferred(shift.id);
+                        const available = isAvailable(shift.id);
                         const isPending = isShiftPending(shift.id);
                         
                         return (
                           <ShiftCell
                             key={shift.id}
-                            selected={preferred}
+                            selected={available}
                             isPending={isPending}
                             onClick={() => handleShiftClick(shift.id)}
                           >
@@ -172,7 +172,7 @@ const ShiftGrid = ({
                                 sx={{ ml: 1 }} 
                               />
                             ) : (
-                              preferred ? 
+                              available ? 
                                 <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
                                 <CloseIcon fontSize="small" sx={{ ml: 1 }} />
                             )}

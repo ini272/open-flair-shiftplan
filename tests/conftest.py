@@ -87,3 +87,68 @@ def authenticated_client(client, test_token):
     """Create a client that's already authenticated."""
     client.cookies.set("access_token", test_token)
     return client
+
+@pytest.fixture(scope="function")
+def test_user(authenticated_client):
+    """Create a test user."""
+    response = authenticated_client.post(
+        "/users/",
+        json={"email": "testuser@example.com", "username": "testuser"}
+    )
+    return response.json()
+
+@pytest.fixture(scope="function")
+def test_group(authenticated_client):
+    """Create a test group."""
+    response = authenticated_client.post(
+        "/groups/",
+        json={"name": "Test Group"}
+    )
+    return response.json()
+
+@pytest.fixture(scope="function")
+def test_shift(authenticated_client):
+    """Create a test shift."""
+    start_time = datetime.utcnow() + timedelta(hours=1)
+    end_time = start_time + timedelta(hours=2)
+    
+    response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Test Shift",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 5
+        }
+    )
+    return response.json()
+
+@pytest.fixture(scope="function")
+def user_in_group(authenticated_client, test_user, test_group):
+    """Create a user and add them to a group."""
+    authenticated_client.post(f"/groups/{test_group['id']}/users/{test_user['id']}")
+    return test_user
+
+@pytest.fixture(scope="function")
+def user_opted_out(authenticated_client, test_user, test_shift):
+    """Create a user who is opted out of a shift."""
+    authenticated_client.post(
+        "/shifts/user-opt-out",
+        json={
+            "user_id": test_user["id"],
+            "shift_id": test_shift["id"]
+        }
+    )
+    return test_user
+
+@pytest.fixture(scope="function")
+def group_opted_out(authenticated_client, test_group, test_shift):
+    """Create a group that is opted out of a shift."""
+    authenticated_client.post(
+        "/shifts/group-opt-out",
+        json={
+            "group_id": test_group["id"],
+            "shift_id": test_shift["id"]
+        }
+    )
+    return test_group

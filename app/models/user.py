@@ -28,8 +28,6 @@ class User(Base):
     # Define relationship to Group
     group = relationship("Group", back_populates="users")
     shifts = relationship("Shift", secondary="shift_users", back_populates="users")
-    shift_preferences = relationship(
-        "Shift", 
-        secondary="user_shift_preferences",
-        back_populates="preferred_by_users"
-    )
+    
+    # Relationship for shifts this user has individually opted out of (only applies if not in a group)
+    opted_out_shifts = relationship("Shift", secondary="shift_user_opt_outs", back_populates="opted_out_users")

@@ -8,6 +8,7 @@ from app.schemas.shift import (
     Shift, ShiftCreate, ShiftUpdate, ShiftWithAssignees,
     ShiftUserBase, ShiftGroupBase
 )
+from app.schemas.user import User
 from app.crud.shift import shift as shift_crud
 from app.crud.user import user as user_crud
 from app.crud.group import group as group_crud
@@ -401,3 +402,257 @@ def generate_shift_plan(
         
         span.set_attribute("assignments.count", len(assignments))
         return {"message": f"Successfully generated shift plan with {len(assignments)} assignments", "assignments": assignments}
+
+@router.post("/user-opt-out", status_code=status.HTTP_200_OK)
+def opt_out_user(
+    opt_out: ShiftUserBase,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Opt a user out of a shift.
+    """
+    with tracer.start_as_current_span("opt-out-user") as span:
+        span.set_attribute("shift.id", opt_out.shift_id)
+        span.set_attribute("user.id", opt_out.user_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=opt_out.shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Check if user exists
+        user = user_crud.get(db, id=opt_out.user_id)
+        if not user:
+            span.set_attribute("error", "User not found")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user is in a group - if so, they can't have individual opt-outs
+        if user.group_id is not None:
+            span.set_attribute("error", "User is in a group")
+            raise HTTPException(
+                status_code=400, 
+                detail="Users in groups cannot have individual opt-outs. Please opt out the entire group."
+            )
+        
+        # Opt the user out
+        updated_shift = shift_crud.opt_out_user(
+            db, shift_id=opt_out.shift_id, user_id=opt_out.user_id
+        )
+        
+        if not updated_shift:
+            span.set_attribute("error", "Failed to opt out user")
+            raise HTTPException(status_code=400, detail="Failed to opt out user")
+        
+        return {"message": f"User {opt_out.user_id} opted out of shift {opt_out.shift_id}"}
+
+@router.post("/user-opt-in", status_code=status.HTTP_200_OK)
+def opt_in_user(
+    opt_in: ShiftUserBase,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Opt a user back into a shift.
+    """
+    with tracer.start_as_current_span("opt-in-user") as span:
+        span.set_attribute("shift.id", opt_in.shift_id)
+        span.set_attribute("user.id", opt_in.user_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=opt_in.shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Check if user exists
+        user = user_crud.get(db, id=opt_in.user_id)
+        if not user:
+            span.set_attribute("error", "User not found")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user is in a group - if so, they can't have individual opt-outs
+        if user.group_id is not None:
+            span.set_attribute("error", "User is in a group")
+            raise HTTPException(
+                status_code=400, 
+                detail="Users in groups cannot have individual opt-outs. Please opt in the entire group."
+            )
+        
+        # Opt the user in
+        updated_shift = shift_crud.opt_in_user(
+            db, shift_id=opt_in.shift_id, user_id=opt_in.user_id
+        )
+        
+        if not updated_shift:
+            span.set_attribute("error", "Failed to opt in user")
+            raise HTTPException(status_code=400, detail="Failed to opt in user")
+        
+        return {"message": f"User {opt_in.user_id} opted into shift {opt_in.shift_id}"}
+
+@router.post("/group-opt-out", status_code=status.HTTP_200_OK)
+def opt_out_group(
+    opt_out: ShiftGroupBase,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Opt a group out of a shift.
+    """
+    with tracer.start_as_current_span("opt-out-group") as span:
+        span.set_attribute("shift.id", opt_out.shift_id)
+        span.set_attribute("group.id", opt_out.group_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=opt_out.shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Check if group exists
+        group = group_crud.get(db, id=opt_out.group_id)
+        if not group:
+            span.set_attribute("error", "Group not found")
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Opt the group out
+        updated_shift = shift_crud.opt_out_group(
+            db, shift_id=opt_out.shift_id, group_id=opt_out.group_id
+        )
+        
+        if not updated_shift:
+            span.set_attribute("error", "Failed to opt out group")
+            raise HTTPException(status_code=400, detail="Failed to opt out group")
+        
+        return {"message": f"Group {opt_out.group_id} opted out of shift {opt_out.shift_id}"}
+
+@router.post("/group-opt-in", status_code=status.HTTP_200_OK)
+def opt_in_group(
+    opt_in: ShiftGroupBase,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Opt a group back into a shift.
+    """
+    with tracer.start_as_current_span("opt-in-group") as span:
+        span.set_attribute("shift.id", opt_in.shift_id)
+        span.set_attribute("group.id", opt_in.group_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=opt_in.shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Check if group exists
+        group = group_crud.get(db, id=opt_in.group_id)
+        if not group:
+            span.set_attribute("error", "Group not found")
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Opt the group in
+        updated_shift = shift_crud.opt_in_group(
+            db, shift_id=opt_in.shift_id, group_id=opt_in.group_id
+        )
+        
+        if not updated_shift:
+            span.set_attribute("error", "Failed to opt in group")
+            raise HTTPException(status_code=400, detail="Failed to opt in group")
+        
+        return {"message": f"Group {opt_in.group_id} opted into shift {opt_in.shift_id}"}
+
+@router.get("/opt-out-status/{shift_id}/{user_id}", status_code=status.HTTP_200_OK)
+def check_opt_out_status(
+    shift_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Check if a user is opted out of a shift.
+    """
+    with tracer.start_as_current_span("check-opt-out-status") as span:
+        span.set_attribute("shift.id", shift_id)
+        span.set_attribute("user.id", user_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Check if user exists
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            span.set_attribute("error", "User not found")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if user is opted out
+        is_opted_out = shift_crud.is_user_opted_out(
+            db, shift_id=shift_id, user_id=user_id
+        )
+        
+        return {"is_opted_out": is_opted_out}
+
+@router.get("/user-opt-outs/{user_id}", response_model=List[Shift])
+def get_user_opt_outs(
+    user_id: int,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get all shifts a user is opted out of.
+    """
+    with tracer.start_as_current_span("get-user-opt-outs") as span:
+        span.set_attribute("user.id", user_id)
+        
+        # Check if user exists
+        user = user_crud.get(db, id=user_id)
+        if not user:
+            span.set_attribute("error", "User not found")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get opt-outs
+        opt_outs = shift_crud.get_user_opt_outs(db, user_id=user_id)
+        
+        return opt_outs
+
+@router.get("/group-opt-outs/{group_id}", response_model=List[Shift])
+def get_group_opt_outs(
+    group_id: int,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get all shifts a group is opted out of.
+    """
+    with tracer.start_as_current_span("get-group-opt-outs") as span:
+        span.set_attribute("group.id", group_id)
+        
+        # Check if group exists
+        group = group_crud.get(db, id=group_id)
+        if not group:
+            span.set_attribute("error", "Group not found")
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Get opt-outs
+        opt_outs = shift_crud.get_group_opt_outs(db, group_id=group_id)
+        
+        return opt_outs
+
+@router.get("/available-users/{shift_id}", response_model=List[User])
+def get_available_users(
+    shift_id: int,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get all users available for a shift (not opted out).
+    """
+    with tracer.start_as_current_span("get-available-users") as span:
+        span.set_attribute("shift.id", shift_id)
+        
+        # Check if shift exists
+        shift = shift_crud.get(db, id=shift_id)
+        if not shift:
+            span.set_attribute("error", "Shift not found")
+            raise HTTPException(status_code=404, detail="Shift not found")
+        
+        # Get available users
+        available_users = shift_crud.get_available_users(db, shift_id=shift_id)
+        
+        return available_users

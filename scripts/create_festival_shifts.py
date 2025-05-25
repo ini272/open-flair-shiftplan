@@ -3,7 +3,7 @@ import datetime
 
 # Configuration
 API_URL = "http://localhost:8000"
-TOKEN = "a6c095fa-720b-45a6-8b65-f34362c97ee7"  # Replace with a valid admin token
+TOKEN = "b716222e-a777-4ad1-98e3-80c8e53df4bf"  # Replace with a valid admin token
 FESTIVAL_START = datetime.datetime(2025, 8, 6)
 FESTIVAL_END = datetime.datetime(2025, 8, 11)  # Day after festival ends
 LOCATIONS = ["Weinzelt", "Bierwagen"]

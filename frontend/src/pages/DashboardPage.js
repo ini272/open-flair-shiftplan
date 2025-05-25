@@ -9,10 +9,10 @@ import ShiftGrid from '../components/ShiftGrid';
 const DashboardPage = () => {
   const [user, setUser] = useState(null);
   const [shifts, setShifts] = useState([]);
-  const [userPreferences, setUserPreferences] = useState([]);
+  // Change this to track opted-out shifts instead of preferences
+  const [optedOutShifts, setOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  // Add state for pending operations
   const [pendingOperations, setPendingOperations] = useState({});
   const navigate = useNavigate();
 
@@ -40,9 +40,9 @@ const DashboardPage = () => {
         const allShiftsResponse = await shiftService.getShifts();
         setShifts(allShiftsResponse.data);
         
-        // Get user's shifts to determine preferences
-        const userShiftsResponse = await shiftService.getShifts({ user_id: userId });
-        setUserPreferences(userShiftsResponse.data.map(shift => shift.id));
+        // Get user's opted-out shifts
+        const optOutsResponse = await shiftService.getUserOptOuts(userId);
+        setOptedOutShifts(optOutsResponse.data.map(shift => shift.id));
       } catch (error) {
         console.error('Error fetching data:', error);
         navigate('/login');
@@ -80,31 +80,22 @@ const DashboardPage = () => {
       [shiftId]: operationId
     }));
     
-    // Determine if we're adding or removing the preference
-    const isPreferred = userPreferences.includes(shiftId);
+    // Determine if the shift is currently opted out
+    const isOptedOut = optedOutShifts.includes(shiftId);
     
     // Optimistically update the UI immediately
-    setUserPreferences(prev => 
-      isPreferred 
-        ? prev.filter(id => id !== shiftId) 
-        : [...prev, shiftId]
+    setOptedOutShifts(prev => 
+      isOptedOut 
+        ? prev.filter(id => id !== shiftId) // Remove from opted-out list
+        : [...prev, shiftId] // Add to opted-out list
     );
     
     // Use setTimeout to make the API call feel even more responsive
-    // This allows the UI to update before the API call starts
     setTimeout(async () => {
       try {
-        if (isPreferred) {
-          // Remove user from shift
-          await shiftService.removeUserFromShift(shiftId, user.id);
-          setSnackbar({
-            open: true,
-            message: 'Successfully opted out of shift',
-            severity: 'success'
-          });
-        } else {
-          // Add user to shift
-          await shiftService.addUserToShift({
+        if (isOptedOut) {
+          // Opt back in (remove from opted-out list)
+          await shiftService.optInUser({
             shift_id: shiftId,
             user_id: user.id
           });
@@ -113,15 +104,26 @@ const DashboardPage = () => {
             message: 'Successfully opted in to shift',
             severity: 'success'
           });
+        } else {
+          // Opt out
+          await shiftService.optOutUser({
+            shift_id: shiftId,
+            user_id: user.id
+          });
+          setSnackbar({
+            open: true,
+            message: 'Successfully opted out of shift',
+            severity: 'success'
+          });
         }
       } catch (error) {
         console.error('Error updating shift preference:', error);
         
         // Revert the optimistic update
-        setUserPreferences(prev => 
-          isPreferred 
-            ? [...prev, shiftId]
-            : prev.filter(id => id !== shiftId)
+        setOptedOutShifts(prev => 
+          isOptedOut 
+            ? [...prev, shiftId] // Add back to opted-out list
+            : prev.filter(id => id !== shiftId) // Remove from opted-out list
         );
         
         setSnackbar({
@@ -137,7 +139,7 @@ const DashboardPage = () => {
           return newPending;
         });
       }
-    }, 10); // Very short timeout to ensure UI updates first
+    }, 10);
   };
 
   const handleCloseSnackbar = () => {
@@ -180,12 +182,14 @@ const DashboardPage = () => {
         Available Shifts
       </Typography>
       <Typography variant="body2" sx={{ mb: 2 }}>
-        Click on a shift to toggle your preference (green = opted in, red = not selected).
+        Click on a shift to toggle your availability (green = available, red = not available).
       </Typography>
       
       <ShiftGrid 
         shifts={shifts} 
-        userPreferences={userPreferences} 
+        // Pass the inverse of optedOutShifts as userPreferences
+        // This way, shifts that are NOT opted out will be green
+        userPreferences={shifts.map(shift => shift.id).filter(id => !optedOutShifts.includes(id))} 
         onTogglePreference={handleTogglePreference}
         pendingOperations={pendingOperations}
       />
