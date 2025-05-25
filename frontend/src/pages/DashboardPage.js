@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
   Container, Box, Typography, Button, Paper, Alert, Snackbar
 } from '@mui/material';
@@ -9,7 +9,6 @@ import ShiftGrid from '../components/ShiftGrid';
 const DashboardPage = () => {
   const [user, setUser] = useState(null);
   const [shifts, setShifts] = useState([]);
-  // Change this to track opted-out shifts instead of preferences
   const [optedOutShifts, setOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -65,7 +64,13 @@ const DashboardPage = () => {
     }
   };
 
-  const handleTogglePreference = async (shiftId) => {
+  // Memoize the available shifts calculation
+  const availableShiftIds = useMemo(() => {
+    return shifts.map(shift => shift.id).filter(id => !optedOutShifts.includes(id));
+  }, [shifts, optedOutShifts]);
+
+  // Use useCallback with all dependencies
+  const handleTogglePreference = useCallback(async (shiftId) => {
     if (!user) return;
     
     // Check if there's already a pending operation for this shift
@@ -74,14 +79,14 @@ const DashboardPage = () => {
     // Create a unique operation ID
     const operationId = `toggle-${shiftId}-${Date.now()}`;
     
-    // Update pending operations immediately
+    // Determine if the shift is currently opted out
+    const isOptedOut = optedOutShifts.includes(shiftId);
+    
+    // Update state in a single batch if possible
     setPendingOperations(prev => ({
       ...prev,
       [shiftId]: operationId
     }));
-    
-    // Determine if the shift is currently opted out
-    const isOptedOut = optedOutShifts.includes(shiftId);
     
     // Optimistically update the UI immediately
     setOptedOutShifts(prev => 
@@ -90,61 +95,59 @@ const DashboardPage = () => {
         : [...prev, shiftId] // Add to opted-out list
     );
     
-    // Use setTimeout to make the API call feel even more responsive
-    setTimeout(async () => {
-      try {
-        if (isOptedOut) {
-          // Opt back in (remove from opted-out list)
-          await shiftService.optInUser({
-            shift_id: shiftId,
-            user_id: user.id
-          });
-          setSnackbar({
-            open: true,
-            message: 'Successfully opted in to shift',
-            severity: 'success'
-          });
-        } else {
-          // Opt out
-          await shiftService.optOutUser({
-            shift_id: shiftId,
-            user_id: user.id
-          });
-          setSnackbar({
-            open: true,
-            message: 'Successfully opted out of shift',
-            severity: 'success'
-          });
-        }
-      } catch (error) {
-        console.error('Error updating shift preference:', error);
-        
-        // Revert the optimistic update
-        setOptedOutShifts(prev => 
-          isOptedOut 
-            ? [...prev, shiftId] // Add back to opted-out list
-            : prev.filter(id => id !== shiftId) // Remove from opted-out list
-        );
-        
+    // Make the API call immediately
+    try {
+      if (isOptedOut) {
+        // Opt back in (remove from opted-out list)
+        await shiftService.optInUser({
+          shift_id: shiftId,
+          user_id: user.id
+        });
         setSnackbar({
           open: true,
-          message: 'Failed to update shift preference. Please try again.',
-          severity: 'error'
+          message: 'Successfully opted in to shift',
+          severity: 'success'
         });
-      } finally {
-        // Clear the pending operation
-        setPendingOperations(prev => {
-          const newPending = { ...prev };
-          delete newPending[shiftId];
-          return newPending;
+      } else {
+        // Opt out
+        await shiftService.optOutUser({
+          shift_id: shiftId,
+          user_id: user.id
+        });
+        setSnackbar({
+          open: true,
+          message: 'Successfully opted out of shift',
+          severity: 'success'
         });
       }
-    }, 10);
-  };
+    } catch (error) {
+      console.error('Error updating shift preference:', error);
+      
+      // Revert the optimistic update
+      setOptedOutShifts(prev => 
+        isOptedOut 
+          ? [...prev, shiftId] // Add back to opted-out list
+          : prev.filter(id => id !== shiftId) // Remove from opted-out list
+      );
+      
+      setSnackbar({
+        open: true,
+        message: 'Failed to update shift preference. Please try again.',
+        severity: 'error'
+      });
+    } finally {
+      // Clear the pending operation
+      setPendingOperations(prev => {
+        const newPending = { ...prev };
+        delete newPending[shiftId];
+        return newPending;
+      });
+    }
+  }, [user, pendingOperations, optedOutShifts, shiftService]);
 
-  const handleCloseSnackbar = () => {
+  const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -187,9 +190,7 @@ const DashboardPage = () => {
       
       <ShiftGrid 
         shifts={shifts} 
-        // Pass the inverse of optedOutShifts as userPreferences
-        // This way, shifts that are NOT opted out will be green
-        userPreferences={shifts.map(shift => shift.id).filter(id => !optedOutShifts.includes(id))} 
+        userPreferences={availableShiftIds} 
         onTogglePreference={handleTogglePreference}
         pendingOperations={pendingOperations}
       />

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box,
   CircularProgress
@@ -43,16 +43,50 @@ const ShiftCell = styled(Box)(({ theme, selected, isPending }) => ({
   }
 }));
 
+// Move format functions outside component
+function formatTime(dateTimeStr) {
+  const date = new Date(dateTimeStr);
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
+function formatDate(dateStr) {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
 const ShiftGrid = ({ 
   shifts, 
   userPreferences, 
   onTogglePreference,
   pendingOperations = {}
 }) => {
+  // Create a lookup object for user preferences for O(1) lookups
+  const preferenceMap = useMemo(() => {
+    const map = {};
+    userPreferences.forEach(id => {
+      map[id] = true;
+    });
+    return map;
+  }, [userPreferences]);
+
+  // Create a lookup object for pending operations for O(1) lookups
+  const pendingMap = useMemo(() => {
+    return { ...pendingOperations };
+  }, [pendingOperations]);
+
   // Extract unique days and time slots from the shifts
-  const { days, timeSlots } = useMemo(() => {
+  const { days, timeSlots, shiftsByDayAndTime } = useMemo(() => {
     const uniqueDays = new Set();
     const uniqueTimeSlots = new Set();
+    const shiftMap = {};
     
     shifts.forEach(shift => {
       const startDate = new Date(shift.start_time);
@@ -62,6 +96,13 @@ const ShiftGrid = ({
       
       const timeSlot = `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)}`;
       uniqueTimeSlots.add(timeSlot);
+      
+      // Build a map of shifts by day and time slot for O(1) lookups
+      const key = `${dateKey}-${timeSlot}`;
+      if (!shiftMap[key]) {
+        shiftMap[key] = [];
+      }
+      shiftMap[key].push(shift);
     });
     
     // Sort days chronologically
@@ -76,59 +117,35 @@ const ShiftGrid = ({
     
     return {
       days: sortedDays,
-      timeSlots: sortedTimeSlots
+      timeSlots: sortedTimeSlots,
+      shiftsByDayAndTime: shiftMap
     };
   }, [shifts]);
 
-  // Format time for display in 24-hour format
-  function formatTime(dateTimeStr) {
-    const date = new Date(dateTimeStr);
-    return date.toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  }
+  // Find shifts for a specific day and time slot - use the precomputed map
+  const findShifts = useCallback((day, timeSlot) => {
+    const key = `${day}-${timeSlot}`;
+    return shiftsByDayAndTime[key] || [];
+  }, [shiftsByDayAndTime]);
 
-  // Format date for column headers
-  function formatDate(dateStr) {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
+  // Check if a shift is available - use the preference map for O(1) lookup
+  const isAvailable = useCallback((shiftId) => {
+    return preferenceMap[shiftId] === true;
+  }, [preferenceMap]);
 
-  // Find shifts for a specific day and time slot
-  function findShifts(day, timeSlot) {
-    return shifts.filter(shift => {
-      const startDate = new Date(shift.start_time);
-      const dateKey = startDate.toISOString().split('T')[0];
-      const shiftTimeSlot = `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)}`;
-      
-      return dateKey === day && shiftTimeSlot === timeSlot;
-    });
-  }
-
-  // Check if a shift is in the user's available shifts
-  function isAvailable(shiftId) {
-    return userPreferences.includes(shiftId);
-  }
-
-  // Check if a shift has a pending operation
-  function isShiftPending(shiftId) {
-    return pendingOperations[shiftId] !== undefined;
-  }
+  // Check if a shift has a pending operation - use the pending map for O(1) lookup
+  const isShiftPending = useCallback((shiftId) => {
+    return pendingMap[shiftId] !== undefined;
+  }, [pendingMap]);
 
   // Handle shift click with debounce to prevent double-clicks
-  const handleShiftClick = (shiftId) => {
+  const handleShiftClick = useCallback((shiftId) => {
     // If already pending, don't allow another click
     if (isShiftPending(shiftId)) return;
     
     // Call the toggle preference function
     onTogglePreference(shiftId);
-  };
+  }, [isShiftPending, onTogglePreference]);
 
   return (
     <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
@@ -191,4 +208,4 @@ const ShiftGrid = ({
   );
 };
 
-export default ShiftGrid;
+export default React.memo(ShiftGrid);
