@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
 import LoginPage from './pages/LoginPage';
-import UserSetupPage from './pages/UserSetupPage';
+import AccountAccessPage from './pages/AccountAccessPage';
 import DashboardPage from './pages/DashboardPage';
 
 // Create an Open Flair themed theme
@@ -64,7 +64,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/setup" element={<UserSetupPage />} />
+          <Route path="/access" element={<AccountAccessPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/" element={<Navigate to="/login" />} />
         </Routes>

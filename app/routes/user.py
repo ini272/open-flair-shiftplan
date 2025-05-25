@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_tracer
 from app.database import get_db
-from app.schemas.user import User, UserCreate, UserUpdate
+from app.schemas.user import User, UserCreate, UserUpdate, EmailLookup
 from app.crud.user import user as user_crud
 
 # Create a router for user-related endpoints
@@ -16,6 +16,27 @@ router = APIRouter(
 
 # Get the tracer for this module
 tracer = get_tracer()
+
+# Update to use the schema from app/schemas/user.py
+@router.post("/lookup", response_model=User)
+def lookup_user_by_email(
+    email_data: EmailLookup,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Look up a user by email address.
+    """
+    with tracer.start_as_current_span("lookup-user-by-email") as span:
+        span.set_attribute("user.email", email_data.email)
+        
+        user = user_crud.get_by_email(db, email=email_data.email)
+        if not user:
+            span.set_attribute("error", "User not found")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        span.set_attribute("user.id", user.id)
+        span.set_attribute("user.username", user.username)
+        return user
 
 @router.post("/", response_model=User, status_code=status.HTTP_201_CREATED)
 def create_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:

@@ -25,3 +25,8 @@ class User(UserBase):
     
     class Config:
         orm_mode = True
+
+# Add this new schema for email lookup
+class EmailLookup(BaseModel):
+    """Schema for looking up a user by email"""
+    email: EmailStr

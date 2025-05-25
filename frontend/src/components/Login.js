@@ -1,47 +1,47 @@
 import React, { useState } from 'react';
-import { Box, TextField, Button, Typography } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import { TextField, Button, Box, Alert } from '@mui/material';
+import { authService } from '../services/api';
 
-const Login = () => {
+const Login = ({ onLoginSuccess }) => {
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
     
     if (!token.trim()) {
       setError('Please enter a token');
+      setLoading(false);
       return;
     }
     
     try {
-      await api.login(token);
+      console.log('Attempting to login with token...');
+      await authService.login(token);
+      console.log('Token validated successfully');
       
-      // Check if user ID exists in localStorage
-      const userId = localStorage.getItem('user_id');
-      if (userId) {
-        navigate('/dashboard');
-      } else {
-        navigate('/setup');
+      // Call the success callback
+      if (onLoginSuccess) {
+        onLoginSuccess();
       }
     } catch (err) {
       console.error('Login error:', err);
       setError('Invalid token. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
-      <Typography variant="h5" gutterBottom>
-        Crew Login
-      </Typography>
-      
-      <Typography variant="body1" sx={{ mb: 2 }}>
-        Enter your access token to log in and manage your shifts.
-      </Typography>
+    <Box component="form" onSubmit={handleSubmit}>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
       
       <TextField
         label="Access Token"
@@ -49,8 +49,7 @@ const Login = () => {
         margin="normal"
         value={token}
         onChange={(e) => setToken(e.target.value)}
-        error={!!error}
-        helperText={error}
+        disabled={loading}
       />
       
       <Button
@@ -58,8 +57,9 @@ const Login = () => {
         fullWidth
         variant="contained"
         sx={{ mt: 3, mb: 2 }}
+        disabled={loading}
       >
-        Login
+        {loading ? 'Validating...' : 'Login'}
       </Button>
     </Box>
   );

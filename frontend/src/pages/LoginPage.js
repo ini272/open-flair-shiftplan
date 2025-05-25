@@ -1,8 +1,17 @@
-import React from 'react';
-import { Container, Box, Paper, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Container, Box, Paper, Typography, Alert } from '@mui/material';
 import Login from '../components/Login';
 
 const LoginPage = () => {
+  const navigate = useNavigate();
+
+  // This function will be passed to the Login component
+  const onLoginSuccess = () => {
+    console.log('Login successful, navigating to account access page...');
+    navigate('/access');
+  };
+
   return (
     <Container maxWidth="sm">
       <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -43,7 +52,7 @@ const LoginPage = () => {
             borderColor: 'primary.main'
           }}
         >
-          <Login />
+          <Login onLoginSuccess={onLoginSuccess} />
         </Paper>
         
         <Typography variant="body2" sx={{ mt: 4, textAlign: 'center', color: 'text.secondary' }}>

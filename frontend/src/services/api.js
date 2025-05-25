@@ -22,6 +22,8 @@ export const userService = {
   createUser: (userData) => api.post('/users', userData),
   updateUser: (id, userData) => api.put(`/users/${id}`, userData),
   deleteUser: (id) => api.delete(`/users/${id}`),
+  // Add this new method for email lookup
+  lookupByEmail: (email) => api.post('/users/lookup', { email }),
 };
 
 // Group services
