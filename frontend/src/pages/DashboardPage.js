@@ -1,18 +1,21 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { authService, userService, shiftService } from '../services/api';
 import ShiftGrid from '../components/ShiftGrid';
+import CoordinatorView from '../components/CoordinatorView';
 
 const DashboardPage = () => {
   const [user, setUser] = useState(null);
+  const [allUsers, setAllUsers] = useState([]); // Add this for coordinator view
   const [shifts, setShifts] = useState([]);
   const [optedOutShifts, setOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [pendingOperations, setPendingOperations] = useState({});
+  const [currentTab, setCurrentTab] = useState(0); // Add tab state
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,6 +37,10 @@ const DashboardPage = () => {
 
         const userResponse = await userService.getUser(userId);
         setUser(userResponse.data);
+
+        // Get all users (for coordinator view)
+        const allUsersResponse = await userService.getUsers();
+        setAllUsers(allUsersResponse.data);
 
         // Get all shifts
         const allShiftsResponse = await shiftService.getShifts();
@@ -143,11 +150,15 @@ const DashboardPage = () => {
         return newPending;
       });
     }
-  }, [user, pendingOperations, optedOutShifts, shiftService]);
+  }, [user, pendingOperations, optedOutShifts]);
 
   const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
   }, []);
+
+  const handleTabChange = (event, newValue) => {
+    setCurrentTab(newValue);
+  };
 
   if (loading) {
     return (
@@ -181,19 +192,39 @@ const DashboardPage = () => {
         )}
       </Paper>
 
-      <Typography variant="h5" gutterBottom>
-        Available Shifts
-      </Typography>
-      <Typography variant="body2" sx={{ mb: 2 }}>
-        Click on a shift to toggle your availability (green = available, red = not available).
-      </Typography>
-      
-      <ShiftGrid 
-        shifts={shifts} 
-        userPreferences={availableShiftIds} 
-        onTogglePreference={handleTogglePreference}
-        pendingOperations={pendingOperations}
-      />
+      {/* Tab Navigation */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={currentTab} onChange={handleTabChange}>
+          <Tab label="My Shifts" />
+          <Tab label="Coordinator View" />
+        </Tabs>
+      </Box>
+
+      {/* Tab Content */}
+      {currentTab === 0 && (
+        <Box>
+          <Typography variant="h5" gutterBottom>
+            Available Shifts
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Click on a shift to toggle your availability (green = available, red = not available).
+          </Typography>
+          
+          <ShiftGrid 
+            shifts={shifts} 
+            userPreferences={availableShiftIds} 
+            onTogglePreference={handleTogglePreference}
+            pendingOperations={pendingOperations}
+          />
+        </Box>
+      )}
+
+      {currentTab === 1 && (
+        <CoordinatorView 
+          shifts={shifts} 
+          users={allUsers}
+        />
+      )}
 
       <Snackbar
         open={snackbar.open}

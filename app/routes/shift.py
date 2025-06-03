@@ -319,89 +319,279 @@ def remove_group_from_shift(
 
 @router.post("/generate-plan", status_code=status.HTTP_200_OK)
 def generate_shift_plan(
+    clear_existing: bool = False,
+    use_groups: bool = True,  # New parameter to enable/disable group assignments
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Generate a shift plan by randomly assigning users to shifts based on their preferences.
+    Generate a shift plan by assigning users and groups to shifts based on opt-outs.
     
     This endpoint:
-    1. Gets all shifts for the festival period (Aug 6-10, 2025)
-    2. For each shift, finds users who have opted in (set preference to can_work=True)
-    3. Randomly assigns users to shifts respecting capacity limits
+    1. Gets all active shifts
+    2. For each shift, considers both individual users and groups
+    3. Assigns users/groups to shifts respecting capacity limits and avoiding conflicts
+    4. Optionally clears existing assignments first
     """
     with tracer.start_as_current_span("generate-shift-plan") as span:
-        # Define festival date range (August 6-10, 2025)
-        start_time = datetime(2025, 8, 6, 0, 0, 0)
-        end_time = datetime(2025, 8, 11, 0, 0, 0)  # Day after festival ends
+        span.set_attribute("clear_existing", clear_existing)
+        span.set_attribute("use_groups", use_groups)
         
-        span.set_attribute("festival.start_time", start_time.isoformat())
-        span.set_attribute("festival.end_time", end_time.isoformat())
+        # Get all active shifts
+        shifts = shift_crud.get_multi(db, skip=0, limit=1000)
+        active_shifts = [shift for shift in shifts if shift.is_active]
         
-        # Get all shifts for the festival period
-        shifts = shift_crud.get_by_time_range(
-            db, start_time=start_time, end_time=end_time
-        )
+        # Get all active users
+        from app.crud.user import user as user_crud
+        from app.crud.group import group as group_crud
         
-        span.set_attribute("shifts.count", len(shifts))
-        span.add_event("fetched_festival_shifts", {"count": len(shifts)})
+        all_users = user_crud.get_multi(db, skip=0, limit=1000)
+        active_users = [user for user in all_users if user.is_active]
         
-        # Import needed for randomization
+        # Get all active groups
+        all_groups = group_crud.get_multi(db, skip=0, limit=1000)
+        active_groups = [group for group in all_groups if group.is_active] if use_groups else []
+        
+        span.set_attribute("shifts.total", len(shifts))
+        span.set_attribute("shifts.active", len(active_shifts))
+        span.set_attribute("users.total", len(all_users))
+        span.set_attribute("users.active", len(active_users))
+        span.set_attribute("groups.total", len(all_groups))
+        span.set_attribute("groups.active", len(active_groups))
+        
+        if not active_shifts:
+            return {
+                "message": "No active shifts found",
+                "assignments": [],
+                "statistics": {
+                    "shifts_assigned": 0,
+                    "total_assignments": 0,
+                    "group_assignments": 0,
+                    "individual_assignments": 0,
+                    "average_assignments_per_user": 0,
+                    "conflicts_avoided": 0
+                }
+            }
+        
+        if not active_users:
+            return {
+                "message": "No active users found",
+                "assignments": [],
+                "statistics": {
+                    "shifts_assigned": 0,
+                    "total_assignments": 0,
+                    "group_assignments": 0,
+                    "individual_assignments": 0,
+                    "average_assignments_per_user": 0,
+                    "conflicts_avoided": 0
+                }
+            }
+        
+        # Clear existing assignments if requested
+        if clear_existing:
+            span.add_event("clearing_existing_assignments")
+            for shift in active_shifts:
+                shift.users.clear()
+                shift.groups.clear()
+            db.commit()
+            span.add_event("existing_assignments_cleared")
+        
         import random
         
-        # Import preference CRUD
-        from app.crud.preferences import preference as preference_crud
-        
-        # Track assignments for reporting
+        # Track assignments and conflicts
         assignments = []
+        group_assignments = 0
+        individual_assignments = 0
+        conflicts_avoided = 0
+        
+        # Sort shifts by start time
+        sorted_shifts = sorted(active_shifts, key=lambda s: s.start_time)
+        
+        # Track user assignments to avoid time conflicts
+        user_assignments = {user.id: [] for user in active_users}
         
         # Process each shift
-        for shift in shifts:
-            span.add_event("processing_shift", {"shift_id": shift.id, "title": shift.title})
+        for shift in sorted_shifts:
+            span.add_event("processing_shift", {
+                "shift_id": shift.id,
+                "title": shift.title,
+                "capacity": shift.capacity
+            })
             
-            # Get all users who have opted in for this shift
-            eligible_user_ids = preference_crud.get_users_for_shift(
-                db, shift_id=shift.id, can_work=True
-            )
+            # Calculate current assignments
+            current_user_count = len(shift.users)
+            capacity = shift.capacity or 5  # Default capacity if none set
+            remaining_capacity = capacity - current_user_count
             
-            # Get user objects
-            from app.crud.user import user as user_crud
-            eligible_users = [user_crud.get(db, id=user_id) for user_id in eligible_user_ids]
-            eligible_users = [user for user in eligible_users if user is not None]
-            
-            # Filter out users already assigned to this shift
-            eligible_users = [user for user in eligible_users if user not in shift.users]
-            
-            span.add_event("eligible_users", {"count": len(eligible_users)})
-            
-            # Calculate how many slots are available
-            available_slots = shift.capacity - len(shift.users) if shift.capacity else len(eligible_users)
-            
-            # If no slots available or no eligible users, skip this shift
-            if available_slots <= 0 or not eligible_users:
-                span.add_event("skipping_shift", {
-                    "reason": "no_slots" if available_slots <= 0 else "no_eligible_users"
-                })
+            if remaining_capacity <= 0:
+                span.add_event("shift_already_full", {"shift_id": shift.id})
                 continue
             
-            # Randomly select users to assign
-            selected_users = random.sample(eligible_users, min(available_slots, len(eligible_users)))
+            # Strategy: Try to assign groups first (more efficient), then individuals
             
-            span.add_event("selected_users", {"count": len(selected_users)})
+            # 1. Try to assign groups
+            if use_groups and remaining_capacity >= 2:  # Only try groups if we have space for at least 2 people
+                eligible_groups = []
+                
+                for group in active_groups:
+                    # Skip if group already assigned to this shift
+                    if group in shift.groups:
+                        continue
+                    
+                    # Get active users in this group
+                    group_users = [user for user in group.users if user.is_active]
+                    if not group_users:
+                        continue
+                    
+                    # Check if group would fit in remaining capacity
+                    if len(group_users) > remaining_capacity:
+                        continue
+                    
+                    # Check if any user in the group has opted out of this shift
+                    group_has_opt_out = False
+                    for user in group_users:
+                        if shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id):
+                            group_has_opt_out = True
+                            break
+                    
+                    if group_has_opt_out:
+                        continue
+                    
+                    # Check for time conflicts for all users in the group
+                    group_has_conflict = False
+                    for user in group_users:
+                        for assigned_shift_id in user_assignments[user.id]:
+                            assigned_shift = next((s for s in sorted_shifts if s.id == assigned_shift_id), None)
+                            if assigned_shift and shifts_overlap(shift, assigned_shift):
+                                group_has_conflict = True
+                                conflicts_avoided += 1
+                                break
+                        if group_has_conflict:
+                            break
+                    
+                    if not group_has_conflict:
+                        eligible_groups.append((group, group_users))
+                
+                # Assign one group randomly if available
+                if eligible_groups:
+                    selected_group, group_users = random.choice(eligible_groups)
+                    
+                    # Assign the group
+                    shift.groups.append(selected_group)
+                    
+                    # Assign all users in the group
+                    for user in group_users:
+                        if user not in shift.users:  # Avoid duplicates
+                            shift.users.append(user)
+                            user_assignments[user.id].append(shift.id)
+                            
+                            assignments.append({
+                                "shift_id": shift.id,
+                                "shift_title": shift.title,
+                                "user_id": user.id,
+                                "username": user.username,
+                                "assigned_via": "group",
+                                "group_name": selected_group.name
+                            })
+                    
+                    group_assignments += 1
+                    remaining_capacity -= len(group_users)
+                    
+                    span.add_event("group_assigned", {
+                        "shift_id": shift.id,
+                        "group_id": selected_group.id,
+                        "group_name": selected_group.name,
+                        "users_count": len(group_users)
+                    })
             
-            # Assign selected users to the shift
-            for user in selected_users:
-                shift_crud.add_user_to_shift(db, shift_id=shift.id, user_id=user.id)
-                assignments.append({
-                    "shift_id": shift.id,
-                    "shift_title": shift.title,
-                    "user_id": user.id,
-                    "username": user.username
-                })
-            
-            span.add_event("users_assigned", {"count": len(selected_users)})
+            # 2. Fill remaining capacity with individual users
+            if remaining_capacity > 0:
+                already_assigned = {user.id for user in shift.users}
+                eligible_users = []
+                
+                for user in active_users:
+                    # Skip if already assigned to this shift
+                    if user.id in already_assigned:
+                        continue
+                    
+                    # Check if user has opted out of this shift
+                    if shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id):
+                        continue
+                    
+                    # Check for time conflicts
+                    has_conflict = False
+                    for assigned_shift_id in user_assignments[user.id]:
+                        assigned_shift = next((s for s in sorted_shifts if s.id == assigned_shift_id), None)
+                        if assigned_shift and shifts_overlap(shift, assigned_shift):
+                            has_conflict = True
+                            conflicts_avoided += 1
+                            break
+                    
+                    if not has_conflict:
+                        eligible_users.append(user)
+                
+                # Assign individual users randomly
+                assignment_count = min(len(eligible_users), remaining_capacity)
+                if assignment_count > 0:
+                    selected_users = random.sample(eligible_users, assignment_count)
+                    
+                    for user in selected_users:
+                        shift.users.append(user)
+                        user_assignments[user.id].append(shift.id)
+                        
+                        assignments.append({
+                            "shift_id": shift.id,
+                            "shift_title": shift.title,
+                            "user_id": user.id,
+                            "username": user.username,
+                            "assigned_via": "individual",
+                            "group_name": user.group.name if user.group else None
+                        })
+                    
+                    individual_assignments += len(selected_users)
+                    
+                    span.add_event("individuals_assigned", {
+                        "shift_id": shift.id,
+                        "assigned_count": len(selected_users)
+                    })
         
-        span.set_attribute("assignments.count", len(assignments))
-        return {"message": f"Successfully generated shift plan with {len(assignments)} assignments", "assignments": assignments}
+        # Commit all changes
+        try:
+            db.commit()
+            span.add_event("assignments_committed")
+        except Exception as e:
+            db.rollback()
+            span.add_event("commit_failed", {"error": str(e)})
+            raise HTTPException(status_code=500, detail=f"Failed to save assignments: {str(e)}")
+        
+        # Calculate statistics
+        assigned_shifts = len([s for s in sorted_shifts if len(s.users) > 0])
+        total_assignments = len(assignments)
+        avg_per_user = total_assignments / len(active_users) if active_users else 0
+        
+        statistics = {
+            "shifts_assigned": assigned_shifts,
+            "total_assignments": total_assignments,
+            "group_assignments": group_assignments,
+            "individual_assignments": individual_assignments,
+            "average_assignments_per_user": round(avg_per_user, 1),
+            "conflicts_avoided": conflicts_avoided,
+            "groups_used": len(set(a.get("group_name") for a in assignments if a.get("assigned_via") == "group"))
+        }
+        
+        span.set_attribute("assignments.total", total_assignments)
+        span.set_attribute("assignments.groups", group_assignments)
+        span.set_attribute("assignments.individuals", individual_assignments)
+        
+        return {
+            "message": f"Successfully generated shift plan with {total_assignments} assignments ({group_assignments} groups, {individual_assignments} individuals)",
+            "assignments": assignments,
+            "statistics": statistics
+        }
+
+def shifts_overlap(shift1, shift2):
+    """Check if two shifts overlap in time."""
+    return (shift1.start_time < shift2.end_time and 
+            shift1.end_time > shift2.start_time)
 
 @router.post("/user-opt-out", status_code=status.HTTP_200_OK)
 def opt_out_user(

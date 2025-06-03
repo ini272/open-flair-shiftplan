@@ -57,6 +57,12 @@ export const shiftService = {
   getUserOptOuts: (userId) => api.get(`/shifts/user-opt-outs/${userId}`),
   getGroupOptOuts: (groupId) => api.get(`/shifts/group-opt-outs/${groupId}`),
   getAvailableUsers: (shiftId) => api.get(`/shifts/available-users/${shiftId}`),
+  generatePlan: (clearExisting = false, useGroups = true) => api.post('/shifts/generate-plan', null, {
+    params: { 
+      clear_existing: clearExisting,
+      use_groups: useGroups 
+    }
+  }),
 };
 
 // Preference services
