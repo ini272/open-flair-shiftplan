@@ -175,7 +175,7 @@ const AccountAccessPage = () => {
     <Container maxWidth="sm">
       <Box sx={{ mt: 8 }}>
         <Box sx={{ textAlign: 'center', mb: 3 }}>
-          <Logo size="medium" />
+          <Logo size="large" />
         </Box>
         
         <Paper sx={{ p: 3 }}>

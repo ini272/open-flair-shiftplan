@@ -181,7 +181,7 @@ const DashboardPage = () => {
       <Box sx={{ mt: 4, mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         {/* Logo + Title */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Logo size="header" />
+          <Logo size="large" />
           <Typography variant="h4" component="h1">
             {translations.festival.crewDashboard}
           </Typography>
