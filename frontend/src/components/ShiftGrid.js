@@ -6,6 +6,7 @@ import {
 import { styled } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import { translations } from '../utils/translations';
 
 // Enhanced styled component for shift cells with more pronounced visual feedback
 const ShiftCell = styled(Box)(({ theme, selected, isPending }) => ({
@@ -55,7 +56,7 @@ function formatTime(dateTimeStr) {
 
 function formatDate(dateStr) {
   const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString('de-DE', {
     weekday: 'short',
     month: 'short',
     day: 'numeric'
@@ -152,7 +153,9 @@ const ShiftGrid = ({
       <Table sx={{ minWidth: 650 }}>
         <TableHead>
           <TableRow>
-            <TableCell sx={{ width: '150px', backgroundColor: '#f5f5f5' }}>Time Slot</TableCell>
+            <TableCell sx={{ width: '150px', backgroundColor: '#f5f5f5' }}>
+              {translations.grid.timeSlot}
+            </TableCell>
             {days.map(day => (
               <TableCell key={day} align="center" sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
                 {formatDate(day)}

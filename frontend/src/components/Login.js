@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { TextField, Button, Box, Alert } from '@mui/material';
+import { TextField, Button, Alert, Box, Typography } from '@mui/material';
 import { authService } from '../services/api';
+import { translations } from '../utils/translations';
 
 const Login = ({ onLoginSuccess }) => {
   const [token, setToken] = useState('');
@@ -10,57 +11,62 @@ const Login = ({ onLoginSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
     
     if (!token.trim()) {
-      setError('Please enter a token');
-      setLoading(false);
+      setError(translations.auth.enterToken);
       return;
     }
     
+    setLoading(true);
+    
     try {
-      console.log('Attempting to login with token...');
       await authService.login(token);
-      console.log('Token validated successfully');
-      
-      // Call the success callback
       if (onLoginSuccess) {
         onLoginSuccess();
       }
-    } catch (err) {
-      console.error('Login error:', err);
-      setError('Invalid token. Please try again.');
+    } catch (error) {
+      console.error('Login failed:', error);
+      setError(translations.auth.invalidToken);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit}>
+    <Box>
+      <Typography variant="h5" component="h2" gutterBottom align="center">
+        {translations.auth.login}
+      </Typography>
+      
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
       
-      <TextField
-        label="Access Token"
-        fullWidth
-        margin="normal"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        disabled={loading}
-      />
-      
-      <Button
-        type="submit"
-        fullWidth
-        variant="contained"
-        sx={{ mt: 3, mb: 2 }}
-        disabled={loading}
-      >
-        {loading ? 'Validating...' : 'Login'}
-      </Button>
+      <Box component="form" onSubmit={handleSubmit}>
+        <TextField
+          label={translations.auth.accessToken}
+          placeholder={translations.auth.tokenPlaceholder}
+          fullWidth
+          margin="normal"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          required
+          disabled={loading}
+        />
+        
+        <Button
+          type="submit"
+          fullWidth
+          variant="contained"
+          size="large"
+          sx={{ mt: 3, mb: 2 }}
+          disabled={loading}
+        >
+          {loading ? translations.auth.checking : translations.auth.login}
+        </Button>
+      </Box>
     </Box>
   );
 };

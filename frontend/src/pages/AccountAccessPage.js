@@ -17,6 +17,8 @@ import {
   Radio
 } from '@mui/material';
 import { userService, groupService } from '../services/api';
+import Logo from '../components/Logo';
+import { translations } from '../utils/translations';
 
 // Tab panel component
 function TabPanel(props) {
@@ -172,22 +174,26 @@ const AccountAccessPage = () => {
   return (
     <Container maxWidth="sm">
       <Box sx={{ mt: 8 }}>
+        <Box sx={{ textAlign: 'center', mb: 3 }}>
+          <Logo size="medium" />
+        </Box>
+        
         <Paper sx={{ p: 3 }}>
           <Typography variant="h4" component="h1" gutterBottom align="center">
-            Account Access
+            {translations.account.accountAccess}
           </Typography>
           
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
             <Tabs value={tabValue} onChange={handleTabChange} aria-label="account access tabs">
-              <Tab label="New User" id="account-tab-0" aria-controls="account-tabpanel-0" />
-              <Tab label="Returning User" id="account-tab-1" aria-controls="account-tabpanel-1" />
+              <Tab label={translations.account.newUser} id="account-tab-0" aria-controls="account-tabpanel-0" />
+              <Tab label={translations.account.existingUser} id="account-tab-1" aria-controls="account-tabpanel-1" />
             </Tabs>
           </Box>
           
           {/* New User Tab */}
           <TabPanel value={tabValue} index={0}>
             <Typography variant="h6" gutterBottom>
-              Create Your Account
+              {translations.account.createAccount}
             </Typography>
             
             {newUserError && (
@@ -198,7 +204,7 @@ const AccountAccessPage = () => {
             
             <Box component="form" onSubmit={handleNewUserSubmit}>
               <TextField
-                label="Your Name"
+                label={translations.account.username}
                 fullWidth
                 margin="normal"
                 value={name}
@@ -207,36 +213,36 @@ const AccountAccessPage = () => {
               />
               
               <TextField
-                label="Email Address"
+                label={translations.account.email}
                 type="email"
                 fullWidth
                 margin="normal"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                helperText="You'll use this to log in next time"
+                helperText="Du verwendest diese E-Mail beim nächsten Mal zum Anmelden"
               />
               
               <FormControl component="fieldset" margin="normal">
-                <FormLabel component="legend">How would you like to work?</FormLabel>
+                <FormLabel component="legend">Wie möchtest du arbeiten?</FormLabel>
                 <RadioGroup
                   value={workPreference}
                   onChange={(e) => setWorkPreference(e.target.value)}
                 >
-                  <FormControlLabel value="alone" control={<Radio />} label="I'll work alone" />
-                  <FormControlLabel value="group" control={<Radio />} label="I'll work in a group" />
+                  <FormControlLabel value="alone" control={<Radio />} label="Ich arbeite alleine" />
+                  <FormControlLabel value="group" control={<Radio />} label="Ich arbeite in einer Gruppe" />
                 </RadioGroup>
               </FormControl>
               
               {workPreference === 'group' && (
                 <TextField
-                  label="Group Name"
+                  label={translations.account.group}
                   fullWidth
                   margin="normal"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   required
-                  helperText="Enter an existing group or create a new one"
+                  helperText="Gib eine bestehende Gruppe ein oder erstelle eine neue"
                 />
               )}
               
@@ -247,7 +253,7 @@ const AccountAccessPage = () => {
                 sx={{ mt: 3, mb: 2 }}
                 disabled={newUserLoading}
               >
-                {newUserLoading ? 'Creating Account...' : 'Create Account'}
+                {newUserLoading ? 'Erstelle Konto...' : 'Konto erstellen'}
               </Button>
             </Box>
           </TabPanel>
@@ -255,7 +261,7 @@ const AccountAccessPage = () => {
           {/* Returning User Tab */}
           <TabPanel value={tabValue} index={1}>
             <Typography variant="h6" gutterBottom>
-              Welcome Back
+              {translations.account.welcomeBack}
             </Typography>
             
             {returningError && (
@@ -266,7 +272,7 @@ const AccountAccessPage = () => {
             
             <Box component="form" onSubmit={handleReturningUserSubmit}>
               <TextField
-                label="Your Email Address"
+                label={translations.account.email}
                 type="email"
                 fullWidth
                 margin="normal"
@@ -282,11 +288,15 @@ const AccountAccessPage = () => {
                 sx={{ mt: 3, mb: 2 }}
                 disabled={returningLoading}
               >
-                {returningLoading ? 'Looking Up Account...' : 'Continue'}
+                {returningLoading ? 'Suche Konto...' : 'Weiter'}
               </Button>
             </Box>
           </TabPanel>
         </Paper>
+        
+        <Typography variant="body2" sx={{ mt: 4, textAlign: 'center', color: 'text.secondary' }}>
+          {translations.festival.dates} • {translations.festival.location}
+        </Typography>
       </Box>
     </Container>
   );

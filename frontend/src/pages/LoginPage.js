@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Box, Paper, Typography, Alert } from '@mui/material';
 import Login from '../components/Login';
+import Logo from '../components/Logo';
+import { translations } from '../utils/translations';
 
 const LoginPage = () => {
   const navigate = useNavigate();
 
-  // This function will be passed to the Login component
   const onLoginSuccess = () => {
     console.log('Login successful, navigating to account access page...');
     navigate('/access');
@@ -15,6 +16,11 @@ const LoginPage = () => {
   return (
     <Container maxWidth="sm">
       <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {/* Logo using component */}
+        <Box sx={{ mb: 3 }}>
+          <Logo size="large" />
+        </Box>
+        
         <Typography 
           variant="h4" 
           component="h1" 
@@ -27,7 +33,7 @@ const LoginPage = () => {
             letterSpacing: '0.1em'
           }}
         >
-          Open Flair Festival
+          {translations.festival.name}
         </Typography>
         <Typography 
           variant="h6" 
@@ -39,7 +45,7 @@ const LoginPage = () => {
             mb: 4
           }}
         >
-          Shift Planner 2025
+          {translations.festival.shiftPlanner}
         </Typography>
         
         <Paper 
@@ -56,7 +62,7 @@ const LoginPage = () => {
         </Paper>
         
         <Typography variant="body2" sx={{ mt: 4, textAlign: 'center', color: 'text.secondary' }}>
-          August 6-10, 2025 • Eschwege, Germany
+          {translations.festival.dates} • {translations.festival.location}
         </Typography>
       </Box>
     </Container>

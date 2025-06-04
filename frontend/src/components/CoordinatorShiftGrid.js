@@ -13,8 +13,9 @@ import {
 import { styled } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
+import { translations } from '../utils/translations';
 
-// Format functions (same as ShiftGrid)
+// Format functions
 function formatTime(dateTimeStr) {
   const date = new Date(dateTimeStr);
   return date.toLocaleTimeString('en-GB', {
@@ -26,11 +27,27 @@ function formatTime(dateTimeStr) {
 
 function formatDate(dateStr) {
   const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', {
+  const dayNames = {
+    'Mon': translations.days.mon,
+    'Tue': translations.days.tue,
+    'Wed': translations.days.wed,
+    'Thu': translations.days.thu,
+    'Fri': translations.days.fri,
+    'Sat': translations.days.sat,
+    'Sun': translations.days.sun
+  };
+  
+  const englishFormatted = date.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric'
   });
+  
+  // Replace English day with German
+  const parts = englishFormatted.split(' ');
+  const germanDay = dayNames[parts[0]] || parts[0];
+  
+  return `${germanDay} ${parts[1]} ${parts[2]}`;
 }
 
 const ShiftCard = styled(Card)(({ theme, staffingLevel }) => {
@@ -90,12 +107,10 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
     if (!generatedAssignments) return shifts;
     
     return shifts.map(shift => {
-      // Find assignments for this shift
       const shiftAssignments = generatedAssignments.filter(
         assignment => assignment.shift_id === shift.id
       );
       
-      // Create user objects from assignments
       const assignedUsers = shiftAssignments.map(assignment => ({
         id: assignment.user_id,
         username: assignment.username
@@ -108,50 +123,40 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
     });
   }, [shifts, generatedAssignments]);
 
-  // Pre-compute grid data
-  const { days, timeSlots, shiftsByDayAndTime } = useMemo(() => {
-    const uniqueDays = new Set();
-    const uniqueTimeSlots = new Set();
-    const shiftMap = {};
+  // Group shifts by date
+  const shiftsByDate = useMemo(() => {
+    const grouped = {};
     
     shiftsWithAssignments.forEach(shift => {
-      const startDate = new Date(shift.start_time);
-      const dateKey = startDate.toISOString().split('T')[0];
-      uniqueDays.add(dateKey);
-      
-      const timeSlot = `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)}`;
-      uniqueTimeSlots.add(timeSlot);
-      
-      const key = `${dateKey}-${timeSlot}`;
-      if (!shiftMap[key]) {
-        shiftMap[key] = [];
+      const date = new Date(shift.start_time).toDateString();
+      if (!grouped[date]) {
+        grouped[date] = [];
       }
-      shiftMap[key].push(shift);
+      grouped[date].push(shift);
     });
     
-    const sortedDays = Array.from(uniqueDays).sort();
-    const sortedTimeSlots = Array.from(uniqueTimeSlots).sort();
+    // Sort shifts within each date by start time
+    Object.keys(grouped).forEach(date => {
+      grouped[date].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+    });
     
-    return {
-      days: sortedDays,
-      timeSlots: sortedTimeSlots,
-      shiftsByDayAndTime: shiftMap
-    };
+    return grouped;
   }, [shiftsWithAssignments]);
 
+  // Determine staffing level
   const getStaffingLevel = (shift) => {
-    const assignedCount = shift.users?.length || 0;
+    const currentStaff = shift.users ? shift.users.length : 0;
     const capacity = shift.capacity;
     
-    if (assignedCount === 0) return 'empty';
-    if (!capacity) return assignedCount > 0 ? 'partial' : 'empty';
-    
-    const ratio = assignedCount / capacity;
-    if (ratio >= 1) return assignedCount > capacity ? 'overstaffed' : 'full';
-    if (ratio >= 0.5) return 'partial';
-    return 'understaffed';
+    if (currentStaff === 0) return 'empty';
+    if (!capacity) return 'partial'; // No capacity set
+    if (currentStaff < capacity * 0.5) return 'understaffed';
+    if (currentStaff < capacity) return 'partial';
+    if (currentStaff === capacity) return 'full';
+    return 'overstaffed';
   };
 
+  // Get staffing level color
   const getStaffingColor = (level) => {
     switch (level) {
       case 'empty': return 'default';
@@ -163,142 +168,122 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
     }
   };
 
-  const renderShiftCell = (day, timeSlot) => {
-    const key = `${day}-${timeSlot}`;
-    const shiftsInCell = shiftsByDayAndTime[key] || [];
-    
-    if (shiftsInCell.length === 0) {
-      return (
-        <Box sx={{ minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography variant="body2" color="text.disabled">
-            No shifts
-          </Typography>
-        </Box>
-      );
+  // Get staffing level text
+  const getStaffingText = (level) => {
+    switch (level) {
+      case 'empty': return translations.grid.empty;
+      case 'understaffed': return translations.grid.understaffed;
+      case 'partial': return translations.grid.partial;
+      case 'full': return translations.grid.fullyStaffed;
+      case 'overstaffed': return translations.grid.overstaffed;
+      default: return translations.grid.empty;
     }
-    
-    return (
-      <Stack spacing={1}>
-        {shiftsInCell.map(shift => {
-          const staffingLevel = getStaffingLevel(shift);
-          const assignedCount = shift.users?.length || 0;
-          const capacity = shift.capacity || '∞';
-          
-          return (
-            <ShiftCard key={shift.id} staffingLevel={staffingLevel}>
-              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                {/* Shift Title and Capacity */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
-                    {shift.title}
-                  </Typography>
-                  <Chip
-                    size="small"
-                    label={`${assignedCount}/${capacity}`}
-                    color={getStaffingColor(staffingLevel)}
-                    variant="outlined"
-                    sx={{ height: 20, fontSize: '0.7rem' }}
-                  />
-                </Box>
-                
-                {/* Assigned Users */}
-                {shift.users && shift.users.length > 0 ? (
-                  <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-                    {shift.users.map(user => (
-                      <UserChip
-                        key={user.id}
-                        avatar={<Avatar sx={{ bgcolor: 'primary.main' }}>{user.username[0].toUpperCase()}</Avatar>}
-                        label={user.username}
-                        size="small"
-                        variant="filled"
-                        color="primary"
-                      />
-                    ))}
-                  </Stack>
-                ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 40 }}>
-                    <Typography variant="body2" color="text.disabled" sx={{ fontSize: '0.75rem' }}>
-                      No assignments
-                    </Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </ShiftCard>
-          );
-        })}
-      </Stack>
-    );
   };
 
-  if (days.length === 0) {
+  if (shiftsWithAssignments.length === 0) {
     return (
       <Paper sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h6" color="text.secondary">
-          No shifts available
+          {translations.grid.noShiftsAvailable}
         </Typography>
       </Paper>
     );
   }
 
   return (
-    <Box sx={{ width: '100%', overflowX: 'auto' }}>
+    <Box>
       {/* Legend */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <Chip size="small" label="Empty" color="default" variant="outlined" />
-        <Chip size="small" label="Under-staffed" color="error" variant="outlined" />
-        <Chip size="small" label="Partial" color="warning" variant="outlined" />
-        <Chip size="small" label="Fully staffed" color="success" variant="outlined" />
-        <Chip size="small" label="Over-staffed" color="info" variant="outlined" />
-      </Box>
+      <Paper sx={{ p: 2, mb: 3, backgroundColor: 'grey.50' }}>
+        <Typography variant="subtitle2" gutterBottom>
+          Legende:
+        </Typography>
+        <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Chip size="small" label={translations.grid.empty} color="default" />
+          <Chip size="small" label={translations.grid.understaffed} color="error" />
+          <Chip size="small" label={translations.grid.partial} color="warning" />
+          <Chip size="small" label={translations.grid.fullyStaffed} color="success" />
+          <Chip size="small" label={translations.grid.overstaffed} color="info" />
+        </Stack>
+      </Paper>
 
-      <Grid container spacing={1}>
-        {/* Header Row */}
-        <Grid item xs={2}>
-          <Box sx={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Time
+      {/* Shifts grouped by date */}
+      {Object.entries(shiftsByDate)
+        .sort(([a], [b]) => new Date(a) - new Date(b))
+        .map(([date, dateShifts]) => (
+          <Box key={date} sx={{ mb: 4 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
+              {formatDate(date)}
             </Typography>
-          </Box>
-        </Grid>
-        {days.map(day => (
-          <Grid item xs={2} key={day}>
-            <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'primary.main', color: 'white' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                {formatDate(day)}
-              </Typography>
-            </Paper>
-          </Grid>
-        ))}
-
-        {/* Time Slot Rows */}
-        {timeSlots.map(timeSlot => (
-          <React.Fragment key={timeSlot}>
-            {/* Time Label */}
-            <Grid item xs={2}>
-              <Box sx={{ 
-                height: '100%', 
-                minHeight: 120,
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                bgcolor: 'grey.100',
-                borderRadius: 1
-              }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-                  {timeSlot}
-                </Typography>
-              </Box>
-            </Grid>
             
-            {/* Shift Cells */}
-            {days.map(day => (
-              <Grid item xs={2} key={`${day}-${timeSlot}`}>
-                {renderShiftCell(day, timeSlot)}
-              </Grid>
-            ))}
-          </React.Fragment>
+            <Grid container spacing={2}>
+              {dateShifts.map(shift => {
+                const staffingLevel = getStaffingLevel(shift);
+                const currentStaff = shift.users ? shift.users.length : 0;
+                
+                return (
+                  <Grid item xs={12} sm={6} md={4} lg={3} key={shift.id}>
+                    <ShiftCard staffingLevel={staffingLevel}>
+                      <CardContent sx={{ p: 2 }}>
+                        {/* Shift Header */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                            {shift.title}
+                          </Typography>
+                          <Chip 
+                            size="small" 
+                            label={getStaffingText(staffingLevel)}
+                            color={getStaffingColor(staffingLevel)}
+                          />
+                        </Box>
+                        
+                        {/* Time */}
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                          {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                        </Typography>
+                        
+                        {/* Capacity */}
+                        <Typography variant="body2" sx={{ mb: 2 }}>
+                          <strong>{translations.shifts.capacity}:</strong> {currentStaff}/{shift.capacity || '∞'}
+                        </Typography>
+                        
+                        {/* Assigned Users */}
+                        {currentStaff > 0 ? (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                              {translations.shifts.assignedUsers}:
+                            </Typography>
+                            <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                              {shift.users.slice(0, 3).map(user => (
+                                <UserChip
+                                  key={user.id}
+                                  avatar={<Avatar><PersonIcon fontSize="small" /></Avatar>}
+                                  label={user.username}
+                                  size="small"
+                                  variant="outlined"
+                                />
+                              ))}
+                              {shift.users.length > 3 && (
+                                <UserChip
+                                  label={`+${shift.users.length - 3}`}
+                                  size="small"
+                                  color="primary"
+                                />
+                              )}
+                            </Stack>
+                          </Box>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            {translations.grid.noAssignments}
+                          </Typography>
+                        )}
+                      </CardContent>
+                    </ShiftCard>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Box>
         ))}
-      </Grid>
     </Box>
   );
 };

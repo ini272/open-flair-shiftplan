@@ -20,6 +20,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import CoordinatorShiftGrid from './CoordinatorShiftGrid';
 import { shiftService } from '../services/api';
+import { translations } from '../utils/translations';
 
 const StatsCard = styled(Card)(({ theme }) => ({
   height: '100%',
@@ -43,7 +44,7 @@ const CoordinatorView = ({ shifts, users }) => {
   const [currentAssignments, setCurrentAssignments] = useState(null);
   const [error, setError] = useState(null);
   const [lastGenerated, setLastGenerated] = useState(null);
-  const [clearExisting, setClearExisting] = useState(true); // Default to true for better UX
+  const [clearExisting, setClearExisting] = useState(true);
   const [useGroups, setUseGroups] = useState(true);
 
   // Calculate current statistics
@@ -51,7 +52,6 @@ const CoordinatorView = ({ shifts, users }) => {
     const totalShifts = shifts.length;
     const totalUsers = users.length;
     
-    // Use current assignments if available, otherwise use existing shift data
     const shiftsToAnalyze = currentAssignments ? 
       shifts.map(shift => {
         const shiftAssignments = currentAssignments.filter(a => a.shift_id === shift.id);
@@ -101,7 +101,7 @@ const CoordinatorView = ({ shifts, users }) => {
       console.log('Plan generated successfully');
     } catch (err) {
       console.error('Detailed error:', err);
-      setError(`Failed to generate shift plan: ${err.message || 'Unknown error'}`);
+      setError(`${translations.coordinator.planGenerationFailed}: ${err.message || 'Unknown error'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -110,7 +110,7 @@ const CoordinatorView = ({ shifts, users }) => {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 4 }}>
-        Coordinator Dashboard
+        {translations.coordinator.dashboard}
       </Typography>
 
       {/* Statistics Cards */}
@@ -123,7 +123,7 @@ const CoordinatorView = ({ shifts, users }) => {
                 {stats.totalShifts}
               </Typography>
               <Typography color="text.secondary">
-                Total Shifts
+                {translations.coordinator.totalShifts}
               </Typography>
             </CardContent>
           </StatsCard>
@@ -137,7 +137,7 @@ const CoordinatorView = ({ shifts, users }) => {
                 {stats.totalUsers}
               </Typography>
               <Typography color="text.secondary">
-                Available Users
+                {translations.coordinator.availableUsers}
               </Typography>
             </CardContent>
           </StatsCard>
@@ -151,7 +151,7 @@ const CoordinatorView = ({ shifts, users }) => {
                 {stats.coveragePercentage}%
               </Typography>
               <Typography color="text.secondary">
-                Shift Coverage
+                {translations.coordinator.shiftCoverage}
               </Typography>
             </CardContent>
           </StatsCard>
@@ -164,7 +164,7 @@ const CoordinatorView = ({ shifts, users }) => {
                 {stats.underStaffedShifts}
               </Typography>
               <Typography color="text.secondary">
-                Under-staffed Shifts
+                {translations.coordinator.understaffedShifts}
               </Typography>
             </CardContent>
           </StatsCard>
@@ -176,11 +176,11 @@ const CoordinatorView = ({ shifts, users }) => {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
           <Box>
             <Typography variant="h5" gutterBottom>
-              Shift Assignments
+              {translations.coordinator.shiftAssignments}
             </Typography>
             {lastGenerated && (
               <Typography variant="body2" color="text.secondary">
-                Last generated: {lastGenerated.toLocaleString()}
+                {translations.coordinator.lastGenerated}: {lastGenerated.toLocaleString()}
               </Typography>
             )}
           </Box>
@@ -196,7 +196,7 @@ const CoordinatorView = ({ shifts, users }) => {
                     color="primary"
                   />
                 }
-                label="Clear existing assignments"
+                label={translations.coordinator.clearExisting}
               />
               <FormControlLabel
                 control={
@@ -206,7 +206,7 @@ const CoordinatorView = ({ shifts, users }) => {
                     color="primary"
                   />
                 }
-                label="Use group assignments"
+                label={translations.coordinator.useGroups}
               />
             </Box>
             
@@ -217,7 +217,7 @@ const CoordinatorView = ({ shifts, users }) => {
               onClick={handleGeneratePlan}
               disabled={isGenerating}
             >
-              {isGenerating ? 'Generating...' : 'Generate Plan'}
+              {isGenerating ? translations.coordinator.generating : translations.coordinator.generatePlan}
             </GenerateButton>
           </Box>
         </Box>
@@ -230,7 +230,7 @@ const CoordinatorView = ({ shifts, users }) => {
 
         {currentAssignments && (
           <Alert severity="success" sx={{ mb: 3 }}>
-            Successfully generated {currentAssignments.length} assignments
+            {translations.coordinator.assignmentsGenerated} {currentAssignments.length} {translations.coordinator.shiftAssignments.toLowerCase()}
           </Alert>
         )}
         

@@ -1,21 +1,27 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link
 } from '@mui/material';
+import { 
+  OpenInNew as OpenInNewIcon,
+  Schedule as ScheduleIcon 
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { authService, userService, shiftService } from '../services/api';
 import ShiftGrid from '../components/ShiftGrid';
 import CoordinatorView from '../components/CoordinatorView';
+import Logo from '../components/Logo';
+import { translations } from '../utils/translations';
 
 const DashboardPage = () => {
   const [user, setUser] = useState(null);
-  const [allUsers, setAllUsers] = useState([]); // Add this for coordinator view
+  const [allUsers, setAllUsers] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [optedOutShifts, setOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [pendingOperations, setPendingOperations] = useState({});
-  const [currentTab, setCurrentTab] = useState(0); // Add tab state
+  const [currentTab, setCurrentTab] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -112,7 +118,7 @@ const DashboardPage = () => {
         });
         setSnackbar({
           open: true,
-          message: 'Successfully opted in to shift',
+          message: translations.shifts.optedInSuccess,
           severity: 'success'
         });
       } else {
@@ -123,7 +129,7 @@ const DashboardPage = () => {
         });
         setSnackbar({
           open: true,
-          message: 'Successfully opted out of shift',
+          message: translations.shifts.optedOutSuccess,
           severity: 'success'
         });
       }
@@ -139,7 +145,7 @@ const DashboardPage = () => {
       
       setSnackbar({
         open: true,
-        message: 'Failed to update shift preference. Please try again.',
+        message: translations.shifts.updateFailed,
         severity: 'error'
       });
     } finally {
@@ -164,7 +170,7 @@ const DashboardPage = () => {
     return (
       <Container>
         <Box sx={{ mt: 4, textAlign: 'center' }}>
-          <Typography variant="h5">Loading...</Typography>
+          <Typography variant="h5">{translations.loading}</Typography>
         </Box>
       </Container>
     );
@@ -173,21 +179,26 @@ const DashboardPage = () => {
   return (
     <Container maxWidth="lg">
       <Box sx={{ mt: 4, mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4" component="h1">
-          Open Flair Festival Crew Dashboard
-        </Typography>
+        {/* Logo + Title */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Logo size="header" />
+          <Typography variant="h4" component="h1">
+            {translations.festival.crewDashboard}
+          </Typography>
+        </Box>
+        
         <Button variant="outlined" onClick={handleLogout}>
-          Logout
+          {translations.logout}
         </Button>
       </Box>
 
       <Paper sx={{ p: 3, mb: 4 }}>
         <Typography variant="h5" gutterBottom>
-          Welcome, {user?.username || 'Crew Member'}!
+          {translations.account.welcome}, {user?.username || 'Crew Member'}!
         </Typography>
         {user?.group && (
           <Typography variant="body1">
-            You're part of group: <strong>{user.group.name}</strong>
+            {translations.account.yourGroup}: <strong>{user.group.name}</strong>
           </Typography>
         )}
       </Paper>
@@ -195,19 +206,52 @@ const DashboardPage = () => {
       {/* Tab Navigation */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={currentTab} onChange={handleTabChange}>
-          <Tab label="My Shifts" />
-          <Tab label="Coordinator View" />
+          <Tab label={translations.shifts.myShifts} />
+          <Tab label={translations.shifts.coordinatorView} />
         </Tabs>
       </Box>
 
       {/* Tab Content */}
       {currentTab === 0 && (
         <Box>
+          {/* Festival Timetable Link */}
+          <Paper sx={{ p: 2, mb: 3, backgroundColor: 'primary.main', color: 'white' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">
+                {translations.shifts.myShifts} - {translations.festival.name} {translations.festival.year}
+              </Typography>
+              <Link
+                href="https://www.open-flair.de/2025/timetable"
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ 
+                  color: 'white', 
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  '&:hover': {
+                    textDecoration: 'underline'
+                  }
+                }}
+              >
+                <ScheduleIcon />
+                <Typography variant="body1">
+                  {translations.festival.timetable}
+                </Typography>
+                <OpenInNewIcon fontSize="small" />
+              </Link>
+            </Box>
+            <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
+              {translations.festival.dates} • {translations.festival.location}
+            </Typography>
+          </Paper>
+
           <Typography variant="h5" gutterBottom>
-            Available Shifts
+            {translations.shifts.availableShifts}
           </Typography>
           <Typography variant="body2" sx={{ mb: 2 }}>
-            Click on a shift to toggle your availability (green = available, red = not available).
+            {translations.shifts.clickToToggle}
           </Typography>
           
           <ShiftGrid 
