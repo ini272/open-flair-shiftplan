@@ -90,6 +90,63 @@ def read_shifts(
         span.set_attribute("result.count", len(shifts))
         return shifts
 
+@router.get("/current-assignments")
+def get_current_assignments(
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_auth)
+) -> Any:
+    """
+    Get all current shift assignments in the same format as generate-plan returns.
+    """
+    with tracer.start_as_current_span("get-current-assignments") as span:
+        span.add_event("fetching_current_assignments")
+        
+        # Use existing CRUD to get all shifts
+        shifts = shift_crud.get_multi(db, skip=0, limit=1000)
+        
+        assignments = []
+        
+        for shift in shifts:
+            if not shift.is_active:
+                continue
+                
+            # Track which users are assigned via groups vs individually
+            users_via_groups = set()
+            
+            # First, process group assignments
+            for group in shift.groups:
+                for user in group.users:
+                    if user.is_active:
+                        users_via_groups.add(user.id)
+                        assignments.append({
+                            "shift_id": shift.id,
+                            "shift_title": shift.title,
+                            "user_id": user.id,
+                            "username": user.username,
+                            "assigned_via": "group",
+                            "group_name": group.name
+                        })
+            
+            # Then, process individual user assignments
+            for user in shift.users:
+                if user.is_active and user.id not in users_via_groups:
+                    assignments.append({
+                        "shift_id": shift.id,
+                        "shift_title": shift.title,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "assigned_via": "individual",
+                        "group_name": user.group.name if user.group else None
+                    })
+        
+        span.set_attribute("assignments.count", len(assignments))
+        span.add_event("current_assignments_fetched")
+        
+        return {
+            "assignments": assignments,
+            "total_assignments": len(assignments)
+        }
+
 @router.get("/{shift_id}", response_model=ShiftWithAssignees)
 def read_shift(
     shift_id: int,
@@ -845,4 +902,5 @@ def get_available_users(
         # Get available users
         available_users = shift_crud.get_available_users(db, shift_id=shift_id)
         
+
         return available_users

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -46,6 +46,27 @@ const CoordinatorView = ({ shifts, users }) => {
   const [lastGenerated, setLastGenerated] = useState(null);
   const [clearExisting, setClearExisting] = useState(true);
   const [useGroups, setUseGroups] = useState(true);
+
+  useEffect(() => {
+    const loadCurrentAssignments = async () => {
+      try {
+        console.log('Loading current assignments...');
+        const response = await shiftService.getCurrentAssignments();
+        
+        if (response.data.assignments && response.data.assignments.length > 0) {
+          console.log('Found existing assignments:', response.data.assignments.length);
+          setCurrentAssignments(response.data.assignments);
+        } else {
+          console.log('No existing assignments found');
+        }
+      } catch (error) {
+        console.log('No existing assignments or error loading:', error.message);
+        // This is fine - coordinator hasn't generated a plan yet
+      }
+    };
+    
+    loadCurrentAssignments();
+  }, []); // Empty dependency array - only run on mount
 
   // Calculate current statistics
   const stats = React.useMemo(() => {

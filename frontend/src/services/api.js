@@ -63,6 +63,7 @@ export const shiftService = {
       use_groups: useGroups 
     }
   }),
+  getCurrentAssignments: () => api.get('/shifts/current-assignments'),
 };
 
 // Preference services
