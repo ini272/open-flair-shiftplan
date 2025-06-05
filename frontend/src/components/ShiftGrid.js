@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box,
-  CircularProgress
+  CircularProgress, Button, Stack
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
@@ -67,7 +67,9 @@ const ShiftGrid = ({
   shifts, 
   userPreferences, 
   onTogglePreference,
-  pendingOperations = {}
+  pendingOperations = {},
+  onBatchDayToggle, // New prop for batch operations
+  batchPendingDays = {} // New prop to track which days are being batch processed
 }) => {
   // Create a lookup object for user preferences for O(1) lookups
   const preferenceMap = useMemo(() => {
@@ -84,10 +86,11 @@ const ShiftGrid = ({
   }, [pendingOperations]);
 
   // Extract unique days and time slots from the shifts
-  const { days, timeSlots, shiftsByDayAndTime } = useMemo(() => {
+  const { days, timeSlots, shiftsByDayAndTime, shiftsByDay } = useMemo(() => {
     const uniqueDays = new Set();
     const uniqueTimeSlots = new Set();
     const shiftMap = {};
+    const dayShiftMap = {}; // New: map of all shifts by day
     
     shifts.forEach(shift => {
       const startDate = new Date(shift.start_time);
@@ -104,6 +107,12 @@ const ShiftGrid = ({
         shiftMap[key] = [];
       }
       shiftMap[key].push(shift);
+      
+      // Build a map of all shifts by day for batch operations
+      if (!dayShiftMap[dateKey]) {
+        dayShiftMap[dateKey] = [];
+      }
+      dayShiftMap[dateKey].push(shift);
     });
     
     // Sort days chronologically
@@ -119,7 +128,8 @@ const ShiftGrid = ({
     return {
       days: sortedDays,
       timeSlots: sortedTimeSlots,
-      shiftsByDayAndTime: shiftMap
+      shiftsByDayAndTime: shiftMap,
+      shiftsByDay: dayShiftMap
     };
   }, [shifts]);
 
@@ -148,6 +158,31 @@ const ShiftGrid = ({
     onTogglePreference(shiftId);
   }, [isShiftPending, onTogglePreference]);
 
+  // Get day selection status for batch button styling
+  const getDaySelectionStatus = useCallback((day) => {
+    const dayShifts = shiftsByDay[day] || [];
+    if (dayShifts.length === 0) return 'none';
+    
+    const selectedCount = dayShifts.filter(shift => isAvailable(shift.id)).length;
+    
+    if (selectedCount === 0) return 'none';
+    if (selectedCount === dayShifts.length) return 'all';
+    return 'partial';
+  }, [shiftsByDay, isAvailable]);
+
+  // Handle batch day toggle
+  const handleBatchDayToggle = useCallback((day) => {
+    if (!onBatchDayToggle) return;
+    
+    const dayShifts = shiftsByDay[day] || [];
+    if (dayShifts.length === 0) return;
+    
+    const selectionStatus = getDaySelectionStatus(day);
+    const shouldSelect = selectionStatus !== 'all'; // Select all if not all are selected
+    
+    onBatchDayToggle(dayShifts, shouldSelect);
+  }, [shiftsByDay, getDaySelectionStatus, onBatchDayToggle]);
+
   return (
     <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
       <Table sx={{ minWidth: 650 }}>
@@ -156,11 +191,40 @@ const ShiftGrid = ({
             <TableCell sx={{ width: '150px', backgroundColor: '#f5f5f5' }}>
               {translations.grid.timeSlot}
             </TableCell>
-            {days.map(day => (
-              <TableCell key={day} align="center" sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
-                {formatDate(day)}
-              </TableCell>
-            ))}
+            {days.map(day => {
+              const selectionStatus = getDaySelectionStatus(day);
+              const isDayPending = batchPendingDays[day];
+              const dayShifts = shiftsByDay[day] || [];
+              
+              return (
+                <TableCell key={day} align="center" sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5', minWidth: '180px' }}>
+                  <Stack spacing={1} alignItems="center">
+                    {formatDate(day)}
+                    {dayShifts.length > 0 && onBatchDayToggle && (
+                      <Button
+                        size="small"
+                        variant={selectionStatus === 'all' ? 'contained' : 'outlined'}
+                        color={selectionStatus === 'partial' ? 'warning' : 'primary'}
+                        onClick={() => handleBatchDayToggle(day)}
+                        disabled={isDayPending}
+                        sx={{ 
+                          minWidth: 'auto', 
+                          px: 1, 
+                          fontSize: '0.7rem',
+                          textTransform: 'none'
+                        }}
+                      >
+                        {isDayPending ? (
+                          <CircularProgress size={12} />
+                        ) : (
+                          selectionStatus === 'all' ? 'Alle abwählen' : 'Alle auswählen'
+                        )}
+                      </Button>
+                    )}
+                  </Stack>
+                </TableCell>
+              );
+            })}
           </TableRow>
         </TableHead>
         <TableBody>

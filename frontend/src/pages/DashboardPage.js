@@ -21,6 +21,7 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [pendingOperations, setPendingOperations] = useState({});
+  const [batchPendingDays, setBatchPendingDays] = useState({}); // New state for batch operations
   const [currentTab, setCurrentTab] = useState(0);
   const navigate = useNavigate();
 
@@ -158,6 +159,171 @@ const DashboardPage = () => {
     }
   }, [user, pendingOperations, optedOutShifts]);
 
+  // New batch day toggle handler
+  const handleBatchDayToggle = useCallback(async (dayShifts, shouldSelect) => {
+    if (!user || dayShifts.length === 0) return;
+    
+    // Get the day from the first shift for tracking
+    const day = new Date(dayShifts[0].start_time).toISOString().split('T')[0];
+    
+    // Set day as pending
+    setBatchPendingDays(prev => ({ ...prev, [day]: true }));
+    
+    try {
+      const operations = [];
+      const shiftsToProcess = [];
+      
+      for (const shift of dayShifts) {
+        const isCurrentlyOptedOut = optedOutShifts.includes(shift.id);
+        const isCurrentlySelected = !isCurrentlyOptedOut;
+        
+        // Only process if the action is needed
+        if (shouldSelect && !isCurrentlySelected) {
+          shiftsToProcess.push({ shift, action: 'opt_in' });
+        } else if (!shouldSelect && isCurrentlySelected) {
+          shiftsToProcess.push({ shift, action: 'opt_out' });
+        }
+      }
+      
+      // Set pending state for all shifts being processed
+      const pendingShiftIds = shiftsToProcess.map(item => item.shift.id);
+      setPendingOperations(prev => {
+        const updated = { ...prev };
+        pendingShiftIds.forEach(id => {
+          updated[id] = `batch-${day}-${Date.now()}`;
+        });
+        return updated;
+      });
+      
+      // Optimistically update the UI
+      setOptedOutShifts(prev => {
+        let updated = [...prev];
+        shiftsToProcess.forEach(({ shift, action }) => {
+          if (action === 'opt_in') {
+            updated = updated.filter(id => id !== shift.id);
+          } else if (action === 'opt_out') {
+            if (!updated.includes(shift.id)) {
+              updated.push(shift.id);
+            }
+          }
+        });
+        return updated;
+      });
+      
+      // Process all shifts simultaneously
+      for (const { shift, action } of shiftsToProcess) {
+        if (action === 'opt_in') {
+          operations.push(
+            shiftService.optInUser({
+              shift_id: shift.id,
+              user_id: user.id
+            }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
+              .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
+          );
+        } else {
+          operations.push(
+            shiftService.optOutUser({
+              shift_id: shift.id,
+              user_id: user.id
+            }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
+              .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
+          );
+        }
+      }
+      
+      // Wait for all operations to complete
+      const results = await Promise.allSettled(operations);
+      
+      // Process results
+      const successfulOperations = [];
+      const failedOperations = [];
+      
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.success) {
+          successfulOperations.push(result.value);
+        } else {
+          failedOperations.push(shiftsToProcess[index]);
+        }
+      });
+      
+      // Revert failed operations in the UI
+      if (failedOperations.length > 0) {
+        setOptedOutShifts(prev => {
+          let updated = [...prev];
+          failedOperations.forEach(({ shift, action }) => {
+            if (action === 'opt_in') {
+              // Revert: add back to opted-out list
+              if (!updated.includes(shift.id)) {
+                updated.push(shift.id);
+              }
+            } else if (action === 'opt_out') {
+              // Revert: remove from opted-out list
+              updated = updated.filter(id => id !== shift.id);
+            }
+          });
+          return updated;
+        });
+      }
+      
+      // Clear pending state for processed shifts
+      setPendingOperations(prev => {
+        const updated = { ...prev };
+        pendingShiftIds.forEach(id => {
+          delete updated[id];
+        });
+        return updated;
+      });
+      
+      // Show results
+      const successCount = successfulOperations.length;
+      const failCount = failedOperations.length;
+      const formatDate = (dateStr) => {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('de-DE', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        });
+      };
+      
+      if (successCount > 0 && failCount === 0) {
+        const action = shouldSelect ? 'ausgewählt' : 'abgewählt';
+        setSnackbar({
+          open: true,
+          message: `${successCount} ${translations.shifts.batchSelectSuccess.replace('{day}', formatDate(day))}`,
+          severity: 'success'
+        });
+      } else if (successCount > 0 && failCount > 0) {
+        setSnackbar({
+          open: true,
+          message: `${successCount} shifts updated, ${failCount} failed for ${formatDate(day)}`,
+          severity: 'warning'
+        });
+      } else if (failCount > 0) {
+        setSnackbar({
+          open: true,
+          message: `Failed to update ${failCount} shifts for ${formatDate(day)}`,
+          severity: 'error'
+        });
+      }
+      
+    } catch (error) {
+      console.error('Batch operation failed:', error);
+      setSnackbar({
+        open: true,
+        message: 'Batch operation failed',
+        severity: 'error'
+      });
+    } finally {
+      // Clear day pending state
+      setBatchPendingDays(prev => {
+        const updated = { ...prev };
+        delete updated[day];
+        return updated;
+      });
+    }
+  }, [user, optedOutShifts]);
+
   const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
   }, []);
@@ -259,6 +425,8 @@ const DashboardPage = () => {
             userPreferences={availableShiftIds} 
             onTogglePreference={handleTogglePreference}
             pendingOperations={pendingOperations}
+            onBatchDayToggle={handleBatchDayToggle}
+            batchPendingDays={batchPendingDays}
           />
         </Box>
       )}

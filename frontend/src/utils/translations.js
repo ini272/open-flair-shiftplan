@@ -56,7 +56,13 @@ export const translations = {
     planGenerationFailed: 'Plan-Generierung fehlgeschlagen.',
     optedInSuccess: 'Erfolgreich für Schicht angemeldet',
     optedOutSuccess: 'Erfolgreich von Schicht abgemeldet', 
-    updateFailed: 'Schicht-Aktualisierung fehlgeschlagen. Bitte versuche es erneut.'
+    updateFailed: 'Schicht-Aktualisierung fehlgeschlagen. Bitte versuche es erneut.',
+    batchSelectSuccess: 'Schichten für {day} erfolgreich ausgewählt',
+    batchDeselectSuccess: 'Schichten für {day} erfolgreich abgewählt', 
+    batchPartialSuccess: '{successCount} Schichten aktualisiert, {failCount} fehlgeschlagen für {day}',
+    batchSelectFailed: 'Schichten für {day} konnten nicht ausgewählt werden',
+    batchDeselectFailed: 'Schichten für {day} konnten nicht abgewählt werden',
+    batchOperationFailed: 'Stapelverarbeitung fehlgeschlagen'
   },
   
   // Festival
