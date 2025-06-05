@@ -99,9 +99,11 @@ export const translations = {
     login: 'Anmelden',
     accessToken: 'Zugangs-Token',
     enterToken: 'Bitte gib einen Token ein',
-    invalidToken: 'Ungültiger Token. Bitte versuche es erneut.',
+    invalidToken: 'Ungültiger oder abgelaufener Token',
     checking: 'Wird überprüft...',
-    tokenPlaceholder: 'Gib deinen Zugangs-Token ein'
+    tokenPlaceholder: 'Gib deinen Zugangs-Token ein',
+    loggingIn: 'Anmeldung läuft...',
+    validatingToken: 'Token wird überprüft...'
   },
   
   // Messages & Status

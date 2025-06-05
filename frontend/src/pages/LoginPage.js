@@ -1,15 +1,18 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Container, Box, Paper, Typography, Alert } from '@mui/material';
+import React from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Container, Box, Paper, Typography } from '@mui/material';
 import Login from '../components/Login';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // Get token from URL query parameter
+  const tokenFromUrl = searchParams.get('token');
 
-  const onLoginSuccess = () => {
-    console.log('Login successful, navigating to account access page...');
+  const handleLoginSuccess = () => {
     navigate('/access');
   };
 
@@ -58,7 +61,10 @@ const LoginPage = () => {
             borderColor: 'primary.main'
           }}
         >
-          <Login onLoginSuccess={onLoginSuccess} />
+          <Login 
+            tokenFromUrl={tokenFromUrl}
+            onLoginSuccess={handleLoginSuccess} 
+          />
         </Paper>
         
         <Typography variant="body2" sx={{ mt: 4, textAlign: 'center', color: 'text.secondary' }}>

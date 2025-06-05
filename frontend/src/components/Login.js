@@ -1,12 +1,35 @@
-import React, { useState } from 'react';
-import { TextField, Button, Alert, Box, Typography } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { TextField, Button, Alert, Box, Typography, CircularProgress } from '@mui/material';
 import { authService } from '../services/api';
 import { translations } from '../utils/translations';
 
-const Login = ({ onLoginSuccess }) => {
-  const [token, setToken] = useState('');
+const Login = ({ tokenFromUrl, onLoginSuccess }) => {
+  const [token, setToken] = useState(tokenFromUrl || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Auto-login effect when component mounts with URL token
+  useEffect(() => {
+    if (tokenFromUrl) {
+      setLoading(true);
+      attemptLogin(tokenFromUrl);
+    }
+  }, [tokenFromUrl]);
+
+  const attemptLogin = async (tokenValue) => {
+    try {
+      await authService.login(tokenValue);
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      setError(translations.auth.invalidToken);
+      setToken(tokenValue); // Keep the token in the field for manual retry
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,19 +41,20 @@ const Login = ({ onLoginSuccess }) => {
     }
     
     setLoading(true);
-    
-    try {
-      await authService.login(token);
-      if (onLoginSuccess) {
-        onLoginSuccess();
-      }
-    } catch (error) {
-      console.error('Login failed:', error);
-      setError(translations.auth.invalidToken);
-    } finally {
-      setLoading(false);
-    }
+    await attemptLogin(token);
   };
+
+  // Show loading message during auto-login
+  if (loading && tokenFromUrl && !error) {
+    return (
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <CircularProgress size={40} sx={{ mb: 2 }} />
+        <Typography variant="h6">
+          {translations.auth.loggingIn}
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -54,6 +78,7 @@ const Login = ({ onLoginSuccess }) => {
           onChange={(e) => setToken(e.target.value)}
           required
           disabled={loading}
+          helperText={translations.auth.tokenHelp}
         />
         
         <Button
@@ -64,7 +89,7 @@ const Login = ({ onLoginSuccess }) => {
           sx={{ mt: 3, mb: 2 }}
           disabled={loading}
         >
-          {loading ? translations.auth.checking : translations.auth.login}
+          {loading ? <CircularProgress size={24} color="inherit" /> : translations.auth.login}
         </Button>
       </Box>
     </Box>

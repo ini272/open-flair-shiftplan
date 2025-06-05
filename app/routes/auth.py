@@ -167,3 +167,36 @@ def check_auth(
         is_valid = token_crud.validate_token(db, token=access_token)
         span.set_attribute("auth.status", "valid" if is_valid else "invalid")
         return {"authenticated": is_valid}
+
+@router.get("/token/{token}")
+def login_with_token_url(
+    token: str,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Login with an access token via URL path.
+    Returns validation result for frontend to handle.
+    """
+    with tracer.start_as_current_span("login-with-token-url") as span:
+        span.set_attribute("login.attempt", True)
+        
+        span.add_event("validating_token_from_url")
+        
+        # Validate token
+        is_valid = token_crud.validate_token(db, token=token)
+        if not is_valid:
+            span.add_event("token_validation_failed")
+            span.set_attribute("error", "Invalid or expired token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        span.add_event("token_validated_successfully")
+        span.set_attribute("login.success", True)
+        
+        return {
+            "message": "Token valid",
+            "token": token,
+            "valid": True
+        }
