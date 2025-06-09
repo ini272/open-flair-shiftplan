@@ -147,6 +147,32 @@ def get_current_assignments(
             "total_assignments": len(assignments)
         }
 
+@router.delete("/all-assignments", status_code=status.HTTP_200_OK)
+def clear_all_assignments(
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_auth)
+) -> Any:
+    """Clear all shift assignments (both users and groups)."""
+    with tracer.start_as_current_span("clear-all-assignments") as span:
+        span.add_event("clearing_all_assignments")
+        
+        shifts = shift_crud.get_multi(db, skip=0, limit=1000)
+        
+        assignments_cleared = 0
+        for shift in shifts:
+            assignments_cleared += len(shift.users) + len(shift.groups)
+            shift.users.clear()
+            shift.groups.clear()
+        
+        db.commit()
+        span.set_attribute("assignments.cleared", assignments_cleared)
+        span.add_event("all_assignments_cleared")
+        
+        return {
+            "message": f"Cleared {assignments_cleared} assignments",
+            "assignments_cleared": assignments_cleared
+        }
+
 @router.get("/{shift_id}", response_model=ShiftWithAssignees)
 def read_shift(
     shift_id: int,

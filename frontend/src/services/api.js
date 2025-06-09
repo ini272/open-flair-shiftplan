@@ -64,6 +64,7 @@ export const shiftService = {
     }
   }),
   getCurrentAssignments: () => api.get('/shifts/current-assignments'),
+  clearAllAssignments: () => api.delete('/shifts/all-assignments'),
 };
 
 // Preference services

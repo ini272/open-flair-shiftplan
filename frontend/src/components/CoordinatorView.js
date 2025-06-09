@@ -128,6 +128,25 @@ const CoordinatorView = ({ shifts, users }) => {
     }
   };
 
+  const handleResetAllAssignments = async () => {
+    try {
+      console.log('Clearing all assignments...');
+      const response = await shiftService.clearAllAssignments();
+      console.log('Assignments cleared:', response.data);
+      
+      // Clear the local state
+      setCurrentAssignments(null);
+      setLastGenerated(null);
+      setError(null);
+      
+      // Show success (you could add a success state if you want)
+      console.log('All assignments reset successfully');
+    } catch (err) {
+      console.error('Error clearing assignments:', err);
+      setError(`Failed to reset assignments: ${err.message || 'Unknown error'}`);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 4 }}>
@@ -230,16 +249,25 @@ const CoordinatorView = ({ shifts, users }) => {
                 label={translations.coordinator.useGroups}
               />
             </Box>
-            
-            {/* Generate Button */}
-            <GenerateButton
-              variant="contained"
-              startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
-              onClick={handleGeneratePlan}
-              disabled={isGenerating}
-            >
-              {isGenerating ? translations.coordinator.generating : translations.coordinator.generatePlan}
-            </GenerateButton>
+            {/* Action Buttons */}
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={handleResetAllAssignments}
+                disabled={isGenerating || !currentAssignments}
+              >
+                Reset All
+              </Button>
+              <GenerateButton
+                variant="contained"
+                startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
+                onClick={handleGeneratePlan}
+                disabled={isGenerating}
+              >
+                {isGenerating ? translations.coordinator.generating : translations.coordinator.generatePlan}
+              </GenerateButton>
+            </Box>
           </Box>
         </Box>
 

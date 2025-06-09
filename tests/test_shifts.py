@@ -409,3 +409,64 @@ def test_shift_requires_authentication(client):
         }
     )
     assert response.status_code == 401
+
+def test_clear_all_assignments(authenticated_client):
+    """Test clearing all shift assignments."""
+    # Create a user
+    user_response = authenticated_client.post(
+        "/users/",
+        json={"email": "cleartest@example.com", "username": "cleartest"}
+    )
+    user_id = user_response.json()["id"]
+    
+    # Create a group
+    group_response = authenticated_client.post(
+        "/groups/",
+        json={"name": "Clear Test Group"}
+    )
+    group_id = group_response.json()["id"]
+    
+    # Create a shift
+    start_time = datetime.utcnow() + timedelta(hours=1)
+    end_time = start_time + timedelta(hours=2)
+    
+    shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Clear Test Shift",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat()
+        }
+    )
+    shift_id = shift_response.json()["id"]
+    
+    # Add user to shift
+    authenticated_client.post(
+        "/shifts/users/",
+        json={"shift_id": shift_id, "user_id": user_id}
+    )
+    
+    # Add group to shift
+    authenticated_client.post(
+        "/shifts/groups/",
+        json={"shift_id": shift_id, "group_id": group_id}
+    )
+    
+    # Verify assignments exist
+    shift_response = authenticated_client.get(f"/shifts/{shift_id}")
+    shift_data = shift_response.json()
+    assert len(shift_data["users"]) > 0
+    assert len(shift_data["groups"]) > 0
+    
+    # Clear all assignments
+    response = authenticated_client.delete("/shifts/all-assignments")
+    assert response.status_code == 200
+    data = response.json()
+    assert "assignments_cleared" in data
+    assert data["assignments_cleared"] > 0
+    
+    # Verify assignments are cleared
+    shift_response = authenticated_client.get(f"/shifts/{shift_id}")
+    shift_data = shift_response.json()
+    assert len(shift_data["users"]) == 0
+    assert len(shift_data["groups"]) == 0
