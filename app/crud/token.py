@@ -7,7 +7,12 @@ from app.models.token import AccessToken
 
 class CRUDToken(CRUDBase[AccessToken, dict, dict]):
     def create_token(
-        self, db: Session, *, name: str, expires_in_days: Optional[int] = None
+        self, 
+        db: Session, 
+        *, 
+        name: str, 
+        expires_in_days: Optional[int] = None,
+        is_coordinator_token: bool = False  # Add this parameter
     ) -> AccessToken:
         """
         Create a new access token.
@@ -26,7 +31,8 @@ class CRUDToken(CRUDBase[AccessToken, dict, dict]):
             
         token = AccessToken(
             name=name,
-            expires_at=expires_at
+            expires_at=expires_at,
+            is_coordinator_token=is_coordinator_token  # Add this line
         )
         db.add(token)
         db.commit()

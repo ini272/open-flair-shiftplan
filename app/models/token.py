@@ -28,6 +28,7 @@ class AccessToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String, unique=True, index=True, default=generate_token)
     name = Column(String, nullable=False)
+    is_coordinator_token = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)

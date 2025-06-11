@@ -19,6 +19,7 @@ const DashboardPage = () => {
   const [shifts, setShifts] = useState([]);
   const [optedOutShifts, setOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isCoordinator, setIsCoordinator] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [pendingOperations, setPendingOperations] = useState({});
   const [batchPendingDays, setBatchPendingDays] = useState({}); // New state for batch operations
@@ -44,6 +45,9 @@ const DashboardPage = () => {
 
         const userResponse = await userService.getUser(userId);
         setUser(userResponse.data);
+
+        // Check coordinator status from user data
+        setIsCoordinator(userResponse.data.is_coordinator || false);
 
         // Get all users (for coordinator view)
         const allUsersResponse = await userService.getUsers();
@@ -373,7 +377,9 @@ const DashboardPage = () => {
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={currentTab} onChange={handleTabChange}>
           <Tab label={translations.shifts.myShifts} />
-          <Tab label={translations.shifts.coordinatorView} />
+          {isCoordinator && (
+            <Tab label={translations.shifts.coordinatorView} />
+          )}
         </Tabs>
       </Box>
 
@@ -431,7 +437,7 @@ const DashboardPage = () => {
         </Box>
       )}
 
-      {currentTab === 1 && (
+      {currentTab === 1 && isCoordinator && (
         <CoordinatorView 
           shifts={shifts} 
           users={allUsers}

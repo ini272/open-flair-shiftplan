@@ -21,6 +21,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     is_active = Column(Boolean, default=True)
+    is_coordinator = Column(Boolean, default=False)
     
     # Add foreign key to Group
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)

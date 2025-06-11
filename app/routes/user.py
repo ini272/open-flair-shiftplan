@@ -1,5 +1,5 @@
-from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Cookie
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_tracer
@@ -39,7 +39,11 @@ def lookup_user_by_email(
         return user
 
 @router.post("/", response_model=User, status_code=status.HTTP_201_CREATED)
-def create_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
+def create_user(
+    user_in: UserCreate, 
+    db: Session = Depends(get_db),
+    access_token: Optional[str] = Cookie(None)  # Add this line
+) -> Any:
     """
     Create a new user.
     """
@@ -50,6 +54,16 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
         
         # Add event: Starting user creation process
         span.add_event("starting_user_creation")
+        
+        # Check if registering with coordinator token
+        is_coordinator = False
+        if access_token:
+            from app.crud.token import token as token_crud
+            token_obj = token_crud.get_by_token(db, token=access_token)
+            if token_obj and token_obj.is_coordinator_token:
+                is_coordinator = True
+                span.add_event("registering_with_coordinator_token")
+                span.set_attribute("user.will_be_coordinator", True)
         
         # Check if email is already registered
         span.add_event("checking_email_uniqueness")
@@ -79,8 +93,18 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
         span.add_event("creating_user_in_database")
         user = user_crud.create(db=db, obj_in=user_in)
         
+        # Grant coordinator privileges if registering with coordinator token
+        if is_coordinator:
+            user.is_coordinator = True
+            db.commit()
+            db.refresh(user)
+            span.add_event("coordinator_privileges_granted", {
+                "user_id": user.id
+            })
+        
         span.add_event("user_created_successfully", {
-            "user_id": user.id
+            "user_id": user.id,
+            "is_coordinator": is_coordinator
         })
         
         return user

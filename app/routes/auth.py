@@ -27,6 +27,7 @@ def create_token(
     """
     with tracer.start_as_current_span("create-token") as span:
         span.set_attribute("token.name", token_data.name)
+        span.set_attribute("token.is_coordinator", token_data.is_coordinator_token)  # Add this line
         if token_data.expires_in_days:
             span.set_attribute("token.expires_in_days", token_data.expires_in_days)
         
@@ -34,7 +35,8 @@ def create_token(
         token_obj = token_crud.create_token(
             db, 
             name=token_data.name,
-            expires_in_days=token_data.expires_in_days
+            expires_in_days=token_data.expires_in_days,
+            is_coordinator_token=token_data.is_coordinator_token  # Add this line
         )
         
         span.set_attribute("token.id", token_obj.id)
@@ -115,10 +117,10 @@ def login_with_token(
         
         span.add_event("login_attempt_started")
         
-        # Validate token
+        # Validate token and get token object
         span.add_event("validating_token")
-        is_valid = token_crud.validate_token(db, token=token)
-        if not is_valid:
+        token_obj = token_crud.get_by_token(db, token=token)
+        if not token_obj or not token_obj.is_valid:
             span.add_event("token_validation_failed")
             span.set_attribute("error", "Invalid or expired token")
             raise HTTPException(
@@ -140,7 +142,9 @@ def login_with_token(
         
         span.add_event("login_completed_successfully")
         span.set_attribute("login.success", True)
-        return {"message": "Login successful"}
+        return {
+            "message": "Login successful"
+        }
 @router.get("/logout")
 def logout(response: Response) -> Any:
     """

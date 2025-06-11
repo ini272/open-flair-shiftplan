@@ -6,6 +6,7 @@ class UserBase(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     is_active: Optional[bool] = None
+    is_coordinator: Optional[bool] = None  # Add this line
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
@@ -21,6 +22,7 @@ class User(UserBase):
     email: EmailStr
     username: str
     is_active: bool
+    is_coordinator: bool  # Add this line
     group_id: Optional[int] = None
     
     class Config:
