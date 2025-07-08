@@ -48,12 +48,12 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 # Handle favicon.ico requests to prevent 404 errors
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    # Adjust the path to look for favicon.ico in the project root
-    current_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    favicon_path = os.path.join(current_dir, "favicon.ico")
-    return FileResponse(favicon_path)
+# @app.get("/favicon.ico", include_in_schema=False)
+# async def favicon():
+#     # Adjust the path to look for favicon.ico in the project root
+#     current_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+#     favicon_path = os.path.join(current_dir, "favicon.ico")
+#     return FileResponse(favicon_path)
 
 # Root endpoint
 @app.get("/")

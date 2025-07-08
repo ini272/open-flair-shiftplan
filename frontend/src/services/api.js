@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000';
+// Use different API URLs for dev vs prod
+const API_URL = process.env.NODE_ENV === 'production' 
+  ? '' // In production, Nginx proxies to backend
+  : 'http://localhost:8000'; // In development, direct to FastAPI
 
 // Create axios instance
 const api = axios.create({
