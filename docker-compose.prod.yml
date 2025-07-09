@@ -21,6 +21,9 @@ services:
       dockerfile: Dockerfile.prod
     ports:
       - "80:80"
+      - "443:443"  # Add HTTPS port
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # Mount certificates read-only
     depends_on:
       - fastapi
 
