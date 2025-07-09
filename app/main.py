@@ -3,6 +3,9 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.tracing import setup_tracing
 from app.database import engine, Base
@@ -19,14 +22,36 @@ app = FastAPI(title="FastAPI Tracing Demo",
 # Set up tracing
 tracer = setup_tracing(app)
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app's address
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Environment-specific configuration
+ENV = os.getenv("NODE_ENV", "development")
+IS_PRODUCTION = ENV == "production"
+
+# Add middleware based on environment
+if IS_PRODUCTION:
+    # Production: Behind nginx proxy with HTTPS
+    app.add_middleware(ProxyHeadersMiddleware)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["weinzelt.duckdns.org"])
+    
+    # CORS for production
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["https://weinzelt.duckdns.org"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Development: Direct access, allow localhost
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+    
+    # CORS for development
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],  # React app's address
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include routers
 app.include_router(user.router)
