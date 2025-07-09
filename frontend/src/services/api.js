@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Use different API URLs for dev vs prod
 const API_URL = process.env.NODE_ENV === 'production' 
-  ? '' // In production, Nginx proxies to backend
+  ? `${window.location.protocol}//${window.location.host}` // Use current protocol (https) and host
   : 'http://localhost:8000'; // In development, direct to FastAPI
 
 // Create axios instance
