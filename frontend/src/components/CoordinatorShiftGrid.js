@@ -8,12 +8,14 @@ import {
   Grid,
   Paper,
   Avatar,
-  Stack
+  Stack,
+  Tooltip
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
-import GroupIcon from '@mui/icons-material/Group';
+import CloseIcon from '@mui/icons-material/Close';
 import { translations } from '../utils/translations';
+import { shiftService } from '../services/api';
 
 // Format functions
 function formatTime(dateTimeStr) {
@@ -28,13 +30,13 @@ function formatTime(dateTimeStr) {
 function formatDate(dateStr) {
   const date = new Date(dateStr);
   const dayNames = {
-    'Mon': translations.days.mon,
-    'Tue': translations.days.tue,
-    'Wed': translations.days.wed,
-    'Thu': translations.days.thu,
-    'Fri': translations.days.fri,
-    'Sat': translations.days.sat,
-    'Sun': translations.days.sun
+    'Mon': translations.days?.mon || 'Mon',
+    'Tue': translations.days?.tue || 'Tue',
+    'Wed': translations.days?.wed || 'Wed',
+    'Thu': translations.days?.thu || 'Thu',
+    'Fri': translations.days?.fri || 'Fri',
+    'Sat': translations.days?.sat || 'Sat',
+    'Sun': translations.days?.sun || 'Sun'
   };
   
   const englishFormatted = date.toLocaleDateString('en-US', {
@@ -92,16 +94,24 @@ const ShiftCard = styled(Card)(({ theme, staffingLevel }) => {
 });
 
 const UserChip = styled(Chip)(({ theme }) => ({
-  height: 24,
+  height: 28,
   fontSize: '0.75rem',
+  margin: theme.spacing(0.25),
   '& .MuiChip-avatar': {
     width: 20,
     height: 20,
     fontSize: '0.7rem',
   },
+  '& .MuiChip-deleteIcon': {
+    width: 16,
+    height: 16,
+    '&:hover': {
+      color: theme.palette.error.main,
+    },
+  },
 }));
 
-const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
+const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChange }) => {
   // Merge shifts with generated assignments
   const shiftsWithAssignments = useMemo(() => {
     if (!generatedAssignments) return shifts;
@@ -113,7 +123,9 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
       
       const assignedUsers = shiftAssignments.map(assignment => ({
         id: assignment.user_id,
-        username: assignment.username
+        username: assignment.username,
+        assignedVia: assignment.assigned_via,
+        groupName: assignment.group_name
       }));
       
       return {
@@ -143,6 +155,36 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
     return grouped;
   }, [shiftsWithAssignments]);
 
+  // Handle removing a user from a shift
+  const handleRemoveUser = async (shiftId, userId, username) => {
+    try {
+      console.log(`Attempting to remove user ${username} (ID: ${userId}) from shift ${shiftId}`);
+      
+      // Add confirmation dialog
+      if (!window.confirm(`Are you sure you want to remove ${username} from this shift?`)) {
+        return;
+      }
+      
+      const response = await shiftService.removeUserFromShift(shiftId, userId);
+      console.log('Remove user response:', response);
+      
+      // Notify parent component to refresh assignments
+      if (onAssignmentsChange) {
+        console.log('Calling onAssignmentsChange to refresh...');
+        await onAssignmentsChange();
+      }
+      
+      console.log(`Successfully removed user ${username} from shift`);
+    } catch (error) {
+      console.error('Failed to remove user from shift:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      
+      // Show more detailed error message
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      alert(`Failed to remove ${username} from shift: ${errorMessage}`);
+    }
+  };
+
   // Determine staffing level
   const getStaffingLevel = (shift) => {
     const currentStaff = shift.users ? shift.users.length : 0;
@@ -171,12 +213,12 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
   // Get staffing level text
   const getStaffingText = (level) => {
     switch (level) {
-      case 'empty': return translations.grid.empty;
-      case 'understaffed': return translations.grid.understaffed;
-      case 'partial': return translations.grid.partial;
-      case 'full': return translations.grid.fullyStaffed;
-      case 'overstaffed': return translations.grid.overstaffed;
-      default: return translations.grid.empty;
+      case 'empty': return translations.grid?.empty || 'Empty';
+      case 'understaffed': return translations.grid?.understaffed || 'Understaffed';
+      case 'partial': return translations.grid?.partial || 'Partial';
+      case 'full': return translations.grid?.fullyStaffed || 'Full';
+      case 'overstaffed': return translations.grid?.overstaffed || 'Overstaffed';
+      default: return translations.grid?.empty || 'Empty';
     }
   };
 
@@ -184,7 +226,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
     return (
       <Paper sx={{ p: 4, textAlign: 'center' }}>
         <Typography variant="h6" color="text.secondary">
-          {translations.grid.noShiftsAvailable}
+          {translations.grid?.noShiftsAvailable || 'No shifts available'}
         </Typography>
       </Paper>
     );
@@ -198,11 +240,11 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
           Legende:
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap">
-          <Chip size="small" label={translations.grid.empty} color="default" />
-          <Chip size="small" label={translations.grid.understaffed} color="error" />
-          <Chip size="small" label={translations.grid.partial} color="warning" />
-          <Chip size="small" label={translations.grid.fullyStaffed} color="success" />
-          <Chip size="small" label={translations.grid.overstaffed} color="info" />
+          <Chip size="small" label={getStaffingText('empty')} color="default" />
+          <Chip size="small" label={getStaffingText('understaffed')} color="error" />
+          <Chip size="small" label={getStaffingText('partial')} color="warning" />
+          <Chip size="small" label={getStaffingText('full')} color="success" />
+          <Chip size="small" label={getStaffingText('overstaffed')} color="info" />
         </Stack>
       </Paper>
 
@@ -221,7 +263,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
                 const currentStaff = shift.users ? shift.users.length : 0;
                 
                 return (
-                  <Grid item xs={12} sm={6} md={4} lg={3} key={shift.id}>
+                  <Grid item xs={12} sm={6} md={4} xl={3} key={shift.id}>
                     <ShiftCard staffingLevel={staffingLevel}>
                       <CardContent sx={{ p: 2 }}>
                         {/* Shift Header */}
@@ -243,37 +285,49 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments }) => {
                         
                         {/* Capacity */}
                         <Typography variant="body2" sx={{ mb: 2 }}>
-                          <strong>{translations.shifts.capacity}:</strong> {currentStaff}/{shift.capacity || '∞'}
+                          <strong>{translations.shifts?.capacity || 'Capacity'}:</strong> {currentStaff}/{shift.capacity || '∞'}
                         </Typography>
                         
                         {/* Assigned Users */}
                         {currentStaff > 0 ? (
                           <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                              {translations.shifts.assignedUsers}:
+                              {translations.shifts?.assignedUsers || 'Assigned Users'}:
                             </Typography>
-                            <Stack direction="row" spacing={0.5} flexWrap="wrap">
-                              {shift.users.slice(0, 3).map(user => (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                              {shift.users.map(user => (
                                 <UserChip
                                   key={user.id}
                                   avatar={<Avatar><PersonIcon fontSize="small" /></Avatar>}
                                   label={user.username}
                                   size="small"
                                   variant="outlined"
+                                  color={user.assignedVia === 'group' ? 'secondary' : 'primary'}
+                                  onDelete={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    console.log('Delete button clicked for user:', user.username);
+                                    handleRemoveUser(shift.id, user.id, user.username);
+                                  }}
+                                  deleteIcon={
+                                    <Tooltip title={`Remove ${user.username} from shift`}>
+                                      <CloseIcon />
+                                    </Tooltip>
+                                  }
                                 />
                               ))}
-                              {shift.users.length > 3 && (
-                                <UserChip
-                                  label={`+${shift.users.length - 3}`}
-                                  size="small"
-                                  color="primary"
-                                />
-                              )}
-                            </Stack>
+                            </Box>
+                            
+                            {/* Show group assignments info */}
+                            {shift.users.some(user => user.assignedVia === 'group') && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontStyle: 'italic' }}>
+                                Note: Users assigned via groups may be re-added when generating new plans
+                              </Typography>
+                            )}
                           </Box>
                         ) : (
                           <Typography variant="caption" color="text.secondary">
-                            {translations.grid.noAssignments}
+                            {translations.grid?.noAssignments || 'No assignments'}
                           </Typography>
                         )}
                       </CardContent>

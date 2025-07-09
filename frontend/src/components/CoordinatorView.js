@@ -15,13 +15,8 @@ import {
   IconButton,
   List,
   ListItem,
-  ListItemText,
   Collapse,
-  Divider,
-  useTheme,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails
+  useTheme
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -36,7 +31,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import PersonIcon from '@mui/icons-material/Person';
 import BlockIcon from '@mui/icons-material/Block';
 import CoordinatorShiftGrid from './CoordinatorShiftGrid';
-import { shiftService, userService } from '../services/api';
+import { shiftService } from '../services/api';
 import { translations } from '../utils/translations';
 
 const StatsCard = styled(Card)(({ theme }) => ({
@@ -72,7 +67,7 @@ const ShiftChip = styled(Chip)(({ theme }) => ({
   height: '24px',
 }));
 
-const DRAWER_WIDTH = 380; // Increased width for more content
+const DRAWER_WIDTH = 380;
 
 const CoordinatorView = ({ shifts, users }) => {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -144,7 +139,7 @@ const CoordinatorView = ({ shifts, users }) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        group: user.group, // Assuming this exists in user data
+        group: user.group,
         shiftCount: 0,
         shifts: []
       };
@@ -241,6 +236,21 @@ const CoordinatorView = ({ shifts, users }) => {
     } catch (err) {
       console.error('Error clearing assignments:', err);
       setError(`Failed to reset assignments: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const refreshAssignments = async () => {
+    try {
+      console.log('Refreshing assignments after user removal...');
+      const response = await shiftService.getCurrentAssignments();
+      
+      if (response.data.assignments && response.data.assignments.length > 0) {
+        setCurrentAssignments(response.data.assignments);
+      } else {
+        setCurrentAssignments(null);
+      }
+    } catch (error) {
+      console.log('Error refreshing assignments:', error.message);
     }
   };
 
@@ -573,6 +583,7 @@ const CoordinatorView = ({ shifts, users }) => {
           <CoordinatorShiftGrid 
             shifts={shifts} 
             generatedAssignments={currentAssignments}
+            onAssignmentsChange={refreshAssignments}
           />
         </Paper>
       </Box>
