@@ -60,10 +60,9 @@ export const shiftService = {
   getUserOptOuts: (userId) => api.get(`/shifts/user-opt-outs/${userId}`),
   getGroupOptOuts: (groupId) => api.get(`/shifts/group-opt-outs/${groupId}`),
   getAvailableUsers: (shiftId) => api.get(`/shifts/available-users/${shiftId}`),
-  generatePlan: (clearExisting = false, useGroups = true) => api.post('/shifts/generate-plan', null, {
+  generatePlan: (maxShiftsPerUser = 10) => api.post('/shifts/generate-plan', null, {
     params: { 
-      clear_existing: clearExisting,
-      use_groups: useGroups 
+      max_shifts_per_user: maxShiftsPerUser
     }
   }),
   getCurrentAssignments: () => api.get('/shifts/current-assignments'),

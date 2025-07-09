@@ -11,7 +11,8 @@ import {
   Alert,
   Chip,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  TextField
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -44,8 +45,7 @@ const CoordinatorView = ({ shifts, users }) => {
   const [currentAssignments, setCurrentAssignments] = useState(null);
   const [error, setError] = useState(null);
   const [lastGenerated, setLastGenerated] = useState(null);
-  const [clearExisting, setClearExisting] = useState(true);
-  const [useGroups, setUseGroups] = useState(true);
+  const [maxShiftsPerUser, setMaxShiftsPerUser] = useState(10);
 
   useEffect(() => {
     const loadCurrentAssignments = async () => {
@@ -112,9 +112,9 @@ const CoordinatorView = ({ shifts, users }) => {
     setError(null);
 
     try {
-      console.log('Starting plan generation with options:', { clearExisting, useGroups });
+      console.log('Starting plan generation with max shifts per user:', maxShiftsPerUser);
       
-      const response = await shiftService.generatePlan(clearExisting, useGroups);
+      const response = await shiftService.generatePlan(maxShiftsPerUser);
       console.log('API response:', response);
       
       setCurrentAssignments(response.data.assignments);
@@ -226,27 +226,16 @@ const CoordinatorView = ({ shifts, users }) => {
           </Box>
           
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
-            {/* Options */}
+            {/* Max Shifts Input */}
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={clearExisting}
-                    onChange={(e) => setClearExisting(e.target.checked)}
-                    color="primary"
-                  />
-                }
-                label={translations.coordinator.clearExisting}
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={useGroups}
-                    onChange={(e) => setUseGroups(e.target.checked)}
-                    color="primary"
-                  />
-                }
-                label={translations.coordinator.useGroups}
+              <TextField
+                type="number"
+                label="Max Shifts per User (Festival)"
+                value={maxShiftsPerUser}
+                onChange={(e) => setMaxShiftsPerUser(parseInt(e.target.value) || 10)}
+                inputProps={{ min: 1, max: 20 }}
+                sx={{ width: 220 }}
+                size="small"
               />
             </Box>
             {/* Action Buttons */}
