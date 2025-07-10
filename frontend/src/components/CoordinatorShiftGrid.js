@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -9,13 +9,27 @@ import {
   Paper,
   Avatar,
   Stack,
-  Tooltip
+  Tooltip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  TextField,
+  InputAdornment
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import CloseIcon from '@mui/icons-material/Close';
+import AddIcon from '@mui/icons-material/Add';
+import SearchIcon from '@mui/icons-material/Search';
 import { translations } from '../utils/translations';
-import { shiftService } from '../services/api';
+import { shiftService, userService } from '../services/api';
 
 // Format functions
 function formatTime(dateTimeStr) {
@@ -97,6 +111,10 @@ const UserChip = styled(Chip)(({ theme }) => ({
   height: 28,
   fontSize: '0.75rem',
   margin: theme.spacing(0.25),
+  // Force the label to use normal text color
+  '& .MuiChip-label': {
+    color: `${theme.palette.text.primary} !important`,
+  },
   '& .MuiChip-avatar': {
     width: 20,
     height: 20,
@@ -105,13 +123,35 @@ const UserChip = styled(Chip)(({ theme }) => ({
   '& .MuiChip-deleteIcon': {
     width: 16,
     height: 16,
+    color: theme.palette.text.secondary,
     '&:hover': {
       color: theme.palette.error.main,
+      backgroundColor: theme.palette.error.light + '30',
+      borderRadius: '50%',
     },
   },
 }));
 
+const AddUserButton = styled(IconButton)(({ theme }) => ({
+  width: 24,
+  height: 24,
+  backgroundColor: theme.palette.primary.light + '30',
+  color: theme.palette.primary.main,
+  border: `1px dashed ${theme.palette.primary.main}`,
+  marginLeft: theme.spacing(1.5),
+  '&:hover': {
+    backgroundColor: theme.palette.primary.light + '50',
+    transform: 'scale(1.1)',
+  },
+}));
+
 const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChange }) => {
+  const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [selectedShift, setSelectedShift] = useState(null);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
   // Merge shifts with generated assignments
   const shiftsWithAssignments = useMemo(() => {
     if (!generatedAssignments) return shifts;
@@ -155,6 +195,54 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
     return grouped;
   }, [shiftsWithAssignments]);
 
+  // Handle opening the add user dialog
+  const handleOpenAddUserDialog = async (shift) => {
+    setSelectedShift(shift);
+    setAddUserDialogOpen(true);
+    setLoadingUsers(true);
+    setSearchTerm('');
+
+    try {
+      // Get available users for this shift (not opted out)
+      const response = await shiftService.getAvailableUsers(shift.id);
+      
+      // Filter out users already assigned to this shift
+      const currentUserIds = new Set(shift.users?.map(u => u.id) || []);
+      const filteredUsers = response.data.filter(user => !currentUserIds.has(user.id));
+      
+      setAvailableUsers(filteredUsers);
+    } catch (error) {
+      console.error('Failed to load available users:', error);
+      setAvailableUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Handle adding a user to a shift
+  const handleAddUser = async (userId, username) => {
+    try {
+      console.log(`Adding user ${username} (${userId}) to shift ${selectedShift.id}`);
+      
+      await shiftService.addUserToShift({
+        shift_id: selectedShift.id,
+        user_id: userId
+      });
+      
+      // Close dialog and refresh assignments
+      setAddUserDialogOpen(false);
+      if (onAssignmentsChange) {
+        await onAssignmentsChange();
+      }
+      
+      console.log(`Successfully added user ${username} to shift`);
+    } catch (error) {
+      console.error('Failed to add user to shift:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      alert(`Failed to add ${username} to shift: ${errorMessage}`);
+    }
+  };
+
   // Handle removing a user from a shift
   const handleRemoveUser = async (shiftId, userId, username) => {
     try {
@@ -184,6 +272,16 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
       alert(`Failed to remove ${username} from shift: ${errorMessage}`);
     }
   };
+
+  // Filter users based on search term
+  const filteredAvailableUsers = useMemo(() => {
+    if (!searchTerm) return availableUsers;
+    
+    return availableUsers.filter(user => 
+      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [availableUsers, searchTerm]);
 
   // Determine staffing level
   const getStaffingLevel = (shift) => {
@@ -261,6 +359,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
               {dateShifts.map(shift => {
                 const staffingLevel = getStaffingLevel(shift);
                 const currentStaff = shift.users ? shift.users.length : 0;
+                const hasCapacity = !shift.capacity || currentStaff < shift.capacity;
                 
                 return (
                   <Grid item xs={12} sm={6} md={4} xl={3} key={shift.id}>
@@ -283,53 +382,78 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                           {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
                         </Typography>
                         
-                        {/* Capacity */}
-                        <Typography variant="body2" sx={{ mb: 2 }}>
-                          <strong>{translations.shifts?.capacity || 'Capacity'}:</strong> {currentStaff}/{shift.capacity || '∞'}
-                        </Typography>
+                        {/* Capacity with Add Button */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Typography variant="body2">
+                            <strong>{translations.shifts?.capacity || 'Capacity'}:</strong> {currentStaff}/{shift.capacity || '∞'}
+                          </Typography>
+                          
+                          {/* Add user button next to capacity */}
+                          {hasCapacity && (
+                            <Tooltip title="Add user to shift">
+                              <AddUserButton
+                                onClick={() => handleOpenAddUserDialog(shift)}
+                                size="small"
+                              >
+                                <AddIcon fontSize="small" />
+                              </AddUserButton>
+                            </Tooltip>
+                          )}
+                        </Box>
                         
                         {/* Assigned Users */}
-                        {currentStaff > 0 ? (
-                          <Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                              {translations.shifts?.assignedUsers || 'Assigned Users'}:
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                              {shift.users.map(user => (
-                                <UserChip
-                                  key={user.id}
-                                  avatar={<Avatar><PersonIcon fontSize="small" /></Avatar>}
-                                  label={user.username}
-                                  size="small"
-                                  variant="outlined"
-                                  color={user.assignedVia === 'group' ? 'secondary' : 'primary'}
-                                  onDelete={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    console.log('Delete button clicked for user:', user.username);
-                                    handleRemoveUser(shift.id, user.id, user.username);
-                                  }}
-                                  deleteIcon={
-                                    <Tooltip title={`Remove ${user.username} from shift`}>
-                                      <CloseIcon />
-                                    </Tooltip>
-                                  }
-                                />
-                              ))}
-                            </Box>
-                            
-                            {/* Show group assignments info */}
-                            {shift.users.some(user => user.assignedVia === 'group') && (
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontStyle: 'italic' }}>
-                                Note: Users assigned via groups may be re-added when generating new plans
-                              </Typography>
-                            )}
-                          </Box>
-                        ) : (
-                          <Typography variant="caption" color="text.secondary">
-                            {translations.grid?.noAssignments || 'No assignments'}
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                            {translations.shifts?.assignedUsers || 'Assigned Users'}:
                           </Typography>
-                        )}
+                          
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {/* Alternative approach - completely neutral styling */}
+                            {shift.users?.map(user => (
+                              <UserChip
+                                key={user.id}
+                                avatar={<Avatar><PersonIcon fontSize="small" /></Avatar>}
+                                label={user.username}
+                                size="small"
+                                variant="outlined"
+                                // Use default styling with custom border only
+                                sx={{
+                                  borderColor: user.assignedVia === 'group' 
+                                    ? 'secondary.main' 
+                                    : 'primary.main',
+                                  backgroundColor: 'background.paper',
+                                  '& .MuiChip-label': {
+                                    color: 'text.primary !important',
+                                  },
+                                  '& .MuiChip-avatar': {
+                                    backgroundColor: 'grey.300',
+                                    color: 'grey.700',
+                                  },
+                                }}
+                                onDelete={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleRemoveUser(shift.id, user.id, user.username);
+                                }}
+                                deleteIcon={<CloseIcon />}
+                              />
+                            ))}
+                          </Box>
+                          
+                          {/* Show group assignments info */}
+                          {shift.users?.some(user => user.assignedVia === 'group') && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontStyle: 'italic' }}>
+                              Note: Users assigned via groups may be re-added when generating new plans
+                            </Typography>
+                          )}
+                          
+                          {/* Show message if no users */}
+                          {(!shift.users || shift.users.length === 0) && (
+                            <Typography variant="caption" color="text.secondary">
+                              {translations.grid?.noAssignments || 'No assignments'}
+                            </Typography>
+                          )}
+                        </Box>
                       </CardContent>
                     </ShiftCard>
                   </Grid>
@@ -338,6 +462,78 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
             </Grid>
           </Box>
         ))}
+
+      {/* Add User Dialog */}
+      <Dialog 
+        open={addUserDialogOpen} 
+        onClose={() => setAddUserDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Add User to {selectedShift?.title}
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            placeholder="Search users..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{ mb: 2, mt: 1 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+          />
+          
+          {loadingUsers ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <Typography>Loading available users...</Typography>
+            </Box>
+          ) : filteredAvailableUsers.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 3 }}>
+              <Typography color="text.secondary">
+                {searchTerm ? 'No users found matching your search' : 'No available users for this shift'}
+              </Typography>
+            </Box>
+          ) : (
+            <List sx={{ maxHeight: 400, overflow: 'auto' }}>
+              {filteredAvailableUsers.map(user => (
+                <ListItem
+                  key={user.id}
+                  button
+                  onClick={() => handleAddUser(user.id, user.username)}
+                  sx={{
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover': {
+                      backgroundColor: 'action.hover',
+                    },
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar>
+                      <PersonIcon />
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={user.username}
+                    secondary={user.email}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddUserDialogOpen(false)}>
+            Cancel
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -402,8 +402,7 @@ def remove_group_from_shift(
 
 @router.post("/generate-plan", status_code=status.HTTP_200_OK)
 def generate_shift_plan(
-    clear_existing: bool = False,
-    use_groups: bool = True,  # New parameter to enable/disable group assignments
+    max_shifts_per_user: int = 10,
     db: Session = Depends(get_db)
 ) -> Any:
     """
@@ -411,13 +410,12 @@ def generate_shift_plan(
     
     This endpoint:
     1. Gets all active shifts
-    2. For each shift, considers both individual users and groups
-    3. Assigns users/groups to shifts respecting capacity limits and avoiding conflicts
-    4. Optionally clears existing assignments first
+    2. Clears existing assignments
+    3. For each shift, considers both individual users and groups
+    4. Assigns users/groups to shifts respecting capacity limits, avoiding conflicts, and respecting max shifts per user
     """
     with tracer.start_as_current_span("generate-shift-plan") as span:
-        span.set_attribute("clear_existing", clear_existing)
-        span.set_attribute("use_groups", use_groups)
+        span.set_attribute("max_shifts_per_user", max_shifts_per_user)
         
         # Get all active shifts
         shifts = shift_crud.get_multi(db, skip=0, limit=1000)
@@ -430,9 +428,9 @@ def generate_shift_plan(
         all_users = user_crud.get_multi(db, skip=0, limit=1000)
         active_users = [user for user in all_users if user.is_active]
         
-        # Get all active groups
+        # Get all active groups (always use groups)
         all_groups = group_crud.get_multi(db, skip=0, limit=1000)
-        active_groups = [group for group in all_groups if group.is_active] if use_groups else []
+        active_groups = [group for group in all_groups if group.is_active]
         
         span.set_attribute("shifts.total", len(shifts))
         span.set_attribute("shifts.active", len(active_shifts))
@@ -451,7 +449,8 @@ def generate_shift_plan(
                     "group_assignments": 0,
                     "individual_assignments": 0,
                     "average_assignments_per_user": 0,
-                    "conflicts_avoided": 0
+                    "conflicts_avoided": 0,
+                    "max_shifts_limit_hits": 0
                 }
             }
         
@@ -465,18 +464,18 @@ def generate_shift_plan(
                     "group_assignments": 0,
                     "individual_assignments": 0,
                     "average_assignments_per_user": 0,
-                    "conflicts_avoided": 0
+                    "conflicts_avoided": 0,
+                    "max_shifts_limit_hits": 0
                 }
             }
         
-        # Clear existing assignments if requested
-        if clear_existing:
-            span.add_event("clearing_existing_assignments")
-            for shift in active_shifts:
-                shift.users.clear()
-                shift.groups.clear()
-            db.commit()
-            span.add_event("existing_assignments_cleared")
+        # Always clear existing assignments
+        span.add_event("clearing_existing_assignments")
+        for shift in active_shifts:
+            shift.users.clear()
+            shift.groups.clear()
+        db.commit()
+        span.add_event("existing_assignments_cleared")
         
         import random
         
@@ -485,12 +484,14 @@ def generate_shift_plan(
         group_assignments = 0
         individual_assignments = 0
         conflicts_avoided = 0
+        max_shifts_limit_hits = 0
         
         # Sort shifts by start time
         sorted_shifts = sorted(active_shifts, key=lambda s: s.start_time)
         
-        # Track user assignments to avoid time conflicts
+        # Track user assignments to avoid time conflicts and respect max shifts limit
         user_assignments = {user.id: [] for user in active_users}
+        user_shift_count = {user.id: 0 for user in active_users}
         
         # Process each shift
         for shift in sorted_shifts:
@@ -511,8 +512,8 @@ def generate_shift_plan(
             
             # Strategy: Try to assign groups first (more efficient), then individuals
             
-            # 1. Try to assign groups
-            if use_groups and remaining_capacity >= 2:  # Only try groups if we have space for at least 2 people
+            # 1. Try to assign groups (always enabled now)
+            if remaining_capacity >= 2:  # Only try groups if we have space for at least 2 people
                 eligible_groups = []
                 
                 for group in active_groups:
@@ -537,6 +538,17 @@ def generate_shift_plan(
                             break
                     
                     if group_has_opt_out:
+                        continue
+                    
+                    # Check if any user in the group would exceed max shifts limit
+                    group_exceeds_limit = False
+                    for user in group_users:
+                        if user_shift_count[user.id] >= max_shifts_per_user:
+                            group_exceeds_limit = True
+                            max_shifts_limit_hits += 1
+                            break
+                    
+                    if group_exceeds_limit:
                         continue
                     
                     # Check for time conflicts for all users in the group
@@ -566,6 +578,7 @@ def generate_shift_plan(
                         if user not in shift.users:  # Avoid duplicates
                             shift.users.append(user)
                             user_assignments[user.id].append(shift.id)
+                            user_shift_count[user.id] += 1
                             
                             assignments.append({
                                 "shift_id": shift.id,
@@ -600,6 +613,11 @@ def generate_shift_plan(
                     if shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id):
                         continue
                     
+                    # Check if user would exceed max shifts limit
+                    if user_shift_count[user.id] >= max_shifts_per_user:
+                        max_shifts_limit_hits += 1
+                        continue
+                    
                     # Check for time conflicts
                     has_conflict = False
                     for assigned_shift_id in user_assignments[user.id]:
@@ -620,6 +638,7 @@ def generate_shift_plan(
                     for user in selected_users:
                         shift.users.append(user)
                         user_assignments[user.id].append(shift.id)
+                        user_shift_count[user.id] += 1
                         
                         assignments.append({
                             "shift_id": shift.id,
@@ -658,15 +677,17 @@ def generate_shift_plan(
             "individual_assignments": individual_assignments,
             "average_assignments_per_user": round(avg_per_user, 1),
             "conflicts_avoided": conflicts_avoided,
+            "max_shifts_limit_hits": max_shifts_limit_hits,
             "groups_used": len(set(a.get("group_name") for a in assignments if a.get("assigned_via") == "group"))
         }
         
         span.set_attribute("assignments.total", total_assignments)
         span.set_attribute("assignments.groups", group_assignments)
         span.set_attribute("assignments.individuals", individual_assignments)
+        span.set_attribute("max_shifts_limit_hits", max_shifts_limit_hits)
         
         return {
-            "message": f"Successfully generated shift plan with {total_assignments} assignments ({group_assignments} groups, {individual_assignments} individuals)",
+            "message": f"Successfully generated shift plan with {total_assignments} assignments ({group_assignments} groups, {individual_assignments} individuals). Max shifts limit hit {max_shifts_limit_hits} times.",
             "assignments": assignments,
             "statistics": statistics
         }
