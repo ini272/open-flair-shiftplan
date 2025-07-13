@@ -115,28 +115,56 @@ const DashboardPage = () => {
     
     // Make the API call immediately
     try {
-      if (isOptedOut) {
-        // Opt back in (remove from opted-out list)
-        await shiftService.optInUser({
-          shift_id: shiftId,
-          user_id: user.id
-        });
-        setSnackbar({
-          open: true,
-          message: translations.shifts.optedInSuccess,
-          severity: 'success'
-        });
+      if (user.group_id) {
+        // User is in a group - use group opt-out endpoints
+        if (isOptedOut) {
+          // Opt back in (remove from opted-out list)
+          await shiftService.optInGroup({
+            shift_id: shiftId,
+            group_id: user.group_id
+          });
+          setSnackbar({
+            open: true,
+            message: `Gruppe wieder für Schicht verfügbar`,
+            severity: 'success'
+          });
+        } else {
+          // Opt out
+          await shiftService.optOutGroup({
+            shift_id: shiftId,
+            group_id: user.group_id
+          });
+          setSnackbar({
+            open: true,
+            message: `Gruppe von Schicht abgemeldet`,
+            severity: 'success'
+          });
+        }
       } else {
-        // Opt out
-        await shiftService.optOutUser({
-          shift_id: shiftId,
-          user_id: user.id
-        });
-        setSnackbar({
-          open: true,
-          message: translations.shifts.optedOutSuccess,
-          severity: 'success'
-        });
+        // Individual user - use individual opt-out endpoints
+        if (isOptedOut) {
+          // Opt back in (remove from opted-out list)
+          await shiftService.optInUser({
+            shift_id: shiftId,
+            user_id: user.id
+          });
+          setSnackbar({
+            open: true,
+            message: translations.shifts.optedInSuccess,
+            severity: 'success'
+          });
+        } else {
+          // Opt out
+          await shiftService.optOutUser({
+            shift_id: shiftId,
+            user_id: user.id
+          });
+          setSnackbar({
+            open: true,
+            message: translations.shifts.optedOutSuccess,
+            severity: 'success'
+          });
+        }
       }
     } catch (error) {
       console.error('Error updating shift preference:', error);
@@ -150,7 +178,7 @@ const DashboardPage = () => {
       
       setSnackbar({
         open: true,
-        message: translations.shifts.updateFailed,
+        message: error.response?.data?.detail || translations.shifts.updateFailed,
         severity: 'error'
       });
     } finally {
