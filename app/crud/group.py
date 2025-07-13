@@ -1,9 +1,14 @@
-from typing import Any, Optional, List
+from typing import Any, Dict, Optional, Union, List
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.crud.base import CRUDBase
 from app.models.group import Group
+from app.models.user import User
 from app.schemas.group import GroupCreate, GroupUpdate
+
+# Default max group size (can be overridden)
+DEFAULT_MAX_GROUP_SIZE = 4
 
 class CRUDGroup(CRUDBase[Group, GroupCreate, GroupUpdate]):
     """
@@ -37,31 +42,33 @@ class CRUDGroup(CRUDBase[Group, GroupCreate, GroupUpdate]):
         """
         return db.query(Group).filter(Group.is_active is True).offset(skip).limit(limit).all()
     
-    def add_user_to_group(self, db: Session, *, group_id: int, user_id: int) -> Any:
-        """
-        Add a user to a group
-        
-        Args:
-            db: Database session
-            group_id: ID of the group
-            user_id: ID of the user to add
-            
-        Returns:
-            Updated user object
-        """
-        from app.models.user import User
-        
-        # Get the user
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
+    def get_group_size(self, db: Session, *, group_id: int) -> int:
+        """Get the current size of a group"""
+        return db.query(func.count(User.id)).filter(User.group_id == group_id).scalar() or 0
+    
+    def can_add_user_to_group(self, db: Session, *, group_id: int, max_size: int = DEFAULT_MAX_GROUP_SIZE) -> bool:
+        """Check if a user can be added to a group (not at max capacity)"""
+        current_size = self.get_group_size(db, group_id=group_id)
+        return current_size < max_size
+    
+    def add_user_to_group(self, db: Session, *, group_id: int, user_id: int, max_size: int = DEFAULT_MAX_GROUP_SIZE) -> Optional[Group]:
+        """Add a user to a group if there's space"""
+        # Check if group has space
+        if not self.can_add_user_to_group(db, group_id=group_id, max_size=max_size):
             return None
-            
-        # Update the user's group
+        
+        # Get the user and group
+        user = db.query(User).filter(User.id == user_id).first()
+        group = self.get(db, id=group_id)
+        
+        if not user or not group:
+            return None
+        
+        # Add user to group
         user.group_id = group_id
-        db.add(user)
         db.commit()
-        db.refresh(user)
-        return user
+        db.refresh(group)
+        return group
     
     def remove_user_from_group(self, db: Session, *, user_id: int) -> Any:
         """

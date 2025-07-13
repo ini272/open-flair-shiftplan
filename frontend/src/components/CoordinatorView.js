@@ -75,6 +75,7 @@ const CoordinatorView = ({ shifts, users }) => {
   const [error, setError] = useState(null);
   const [lastGenerated, setLastGenerated] = useState(null);
   const [maxShiftsPerUser, setMaxShiftsPerUser] = useState(10);
+  const [maxGroupSize, setMaxGroupSize] = useState(4);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [expandedUsers, setExpandedUsers] = useState(new Set());
   const [userOptOuts, setUserOptOuts] = useState({});
@@ -534,7 +535,7 @@ const CoordinatorView = ({ shifts, users }) => {
             </Box>
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
-              {/* Max Shifts Input */}
+              {/* Max Shifts and Group Size Inputs */}
               <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                 <TextField
                   type="number"
@@ -543,6 +544,15 @@ const CoordinatorView = ({ shifts, users }) => {
                   onChange={(e) => setMaxShiftsPerUser(parseInt(e.target.value) || 10)}
                   inputProps={{ min: 1, max: 20 }}
                   sx={{ width: 180 }}
+                  size="small"
+                />
+                <TextField
+                  type="number"
+                  label="Max Group Size"
+                  value={maxGroupSize}
+                  onChange={(e) => setMaxGroupSize(parseInt(e.target.value) || 4)}
+                  inputProps={{ min: 2, max: 10 }}
+                  sx={{ width: 150 }}
                   size="small"
                 />
               </Box>

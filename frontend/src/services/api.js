@@ -36,7 +36,9 @@ export const groupService = {
   createGroup: (groupData) => api.post('/groups', groupData),
   updateGroup: (id, groupData) => api.put(`/groups/${id}`, groupData),
   deleteGroup: (id) => api.delete(`/groups/${id}`),
-  addUserToGroup: (groupId, userId) => api.post(`/groups/${groupId}/users/${userId}`),
+  addUserToGroup: (groupId, userId, maxGroupSize = 4) => api.post(`/groups/${groupId}/users/${userId}`, null, {
+    params: { max_group_size: maxGroupSize }
+  }),
   removeUserFromGroup: (userId) => api.delete(`/groups/users/${userId}`),
 };
 
