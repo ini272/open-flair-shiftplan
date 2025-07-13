@@ -188,10 +188,7 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         group_id: int
     ) -> Optional[Shift]:
         """
-        Remove a group from a shift.
-        
-        This removes the group but does NOT remove the individual users
-        that were added as part of the group.
+        Remove a group from a shift and also remove all group members.
         """
         shift = self.get(db, id=shift_id)
         if not shift:
@@ -203,8 +200,15 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         if not group or group not in shift.groups:
             return shift
             
-        # Remove group from shift
+        # Remove the group from shift
         shift.groups.remove(group)
+        
+        # Remove all users from this group from the shift
+        # Safe because group members can't be assigned individually
+        for user in group.users:
+            if user in shift.users:
+                shift.users.remove(user)
+                
         db.commit()
         db.refresh(shift)
         return shift

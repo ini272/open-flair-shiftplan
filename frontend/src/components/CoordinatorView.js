@@ -255,6 +255,25 @@ const CoordinatorView = ({ shifts, users }) => {
     }
   };
 
+  const handleRefreshAssignments = async () => {
+    try {
+      console.log('Refreshing current assignments...');
+      const response = await shiftService.getCurrentAssignments();
+      
+      if (response.data.assignments && response.data.assignments.length > 0) {
+        console.log('Updated assignments:', response.data.assignments.length);
+        setCurrentAssignments(response.data.assignments);
+      } else {
+        console.log('No assignments found after refresh');
+        setCurrentAssignments(null);
+      }
+    } catch (error) {
+      console.log('Error refreshing assignments:', error.message);
+      // If there's an error, it might mean no assignments exist
+      setCurrentAssignments(null);
+    }
+  };
+
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
   };
@@ -593,7 +612,7 @@ const CoordinatorView = ({ shifts, users }) => {
           <CoordinatorShiftGrid 
             shifts={shifts} 
             generatedAssignments={currentAssignments}
-            onAssignmentsChange={refreshAssignments}
+            onAssignmentsChange={handleRefreshAssignments}
           />
         </Paper>
       </Box>
