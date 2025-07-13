@@ -1,17 +1,20 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link, Stack, Chip
 } from '@mui/material';
 import { 
   OpenInNew as OpenInNewIcon,
   Schedule as ScheduleIcon 
 } from '@mui/icons-material';
+import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
 import { authService, userService, shiftService } from '../services/api';
 import ShiftGrid from '../components/ShiftGrid';
 import CoordinatorView from '../components/CoordinatorView';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
+import { groupService } from '../services/api';
+
 
 const DashboardPage = () => {
   const [user, setUser] = useState(null);
@@ -24,6 +27,7 @@ const DashboardPage = () => {
   const [pendingOperations, setPendingOperations] = useState({});
   const [batchPendingDays, setBatchPendingDays] = useState({}); // New state for batch operations
   const [currentTab, setCurrentTab] = useState(0);
+  const [userGroup, setUserGroup] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,6 +74,23 @@ const DashboardPage = () => {
 
     fetchData();
   }, [navigate]);
+
+  useEffect(() => {
+    const fetchUserGroup = async () => {
+      if (user?.group_id && !userGroup) {
+        try {
+          console.log('Fetching group details for group_id:', user.group_id);
+          const response = await groupService.getGroup(user.group_id);
+          console.log('Group details:', response.data);
+          setUserGroup(response.data);
+        } catch (error) {
+          console.error('Error fetching user group:', error);
+        }
+      }
+    };
+    
+    fetchUserGroup();
+  }, [user?.group_id, userGroup]);
 
   const handleLogout = async () => {
     try {
@@ -394,10 +415,32 @@ const DashboardPage = () => {
         <Typography variant="h5" gutterBottom>
           {translations.account.welcome}, {user?.username || 'Crew Member'}!
         </Typography>
-        {user?.group && (
-          <Typography variant="body1">
-            {translations.account.yourGroup}: <strong>{user.group.name}</strong>
-          </Typography>
+        {user?.group_id && userGroup && (
+          <Box>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              <strong>Team:</strong> {userGroup.name}
+            </Typography>
+            {userGroup.users && userGroup.users.length > 1 && (
+              <Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Teammitglieder:
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  {userGroup.users
+                    .map(member => (
+                      <Chip
+                        key={member.id}
+                        icon={<PersonIcon />}
+                        label={member.id === user.id ? `${member.username} (Du)` : member.username}
+                        size="small"
+                        variant={member.id === user.id ? "filled" : "outlined"}
+                        color={member.id === user.id ? "primary" : "secondary"}
+                      />
+                    ))}
+                </Stack>
+              </Box>
+            )}
+          </Box>
         )}
       </Paper>
 
