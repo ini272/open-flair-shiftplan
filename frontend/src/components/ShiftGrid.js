@@ -85,44 +85,49 @@ const ShiftGrid = ({
     return { ...pendingOperations };
   }, [pendingOperations]);
 
-  // Extract unique days and time slots from the shifts
+  // Extract unique days and time slots from the shifts using smart grouping
   const { days, timeSlots, shiftsByDayAndTime, shiftsByDay } = useMemo(() => {
     const uniqueDays = new Set();
     const uniqueTimeSlots = new Set();
     const shiftMap = {};
-    const dayShiftMap = {}; // New: map of all shifts by day
+    const dayShiftMap = {};
     
     shifts.forEach(shift => {
       const startDate = new Date(shift.start_time);
-      // Format: YYYY-MM-DD
+      // Use actual date, not display date
       const dateKey = startDate.toISOString().split('T')[0];
       uniqueDays.add(dateKey);
       
       const timeSlot = `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)}`;
       uniqueTimeSlots.add(timeSlot);
       
-      // Build a map of shifts by day and time slot for O(1) lookups
       const key = `${dateKey}-${timeSlot}`;
       if (!shiftMap[key]) {
         shiftMap[key] = [];
       }
       shiftMap[key].push(shift);
       
-      // Build a map of all shifts by day for batch operations
       if (!dayShiftMap[dateKey]) {
         dayShiftMap[dateKey] = [];
       }
       dayShiftMap[dateKey].push(shift);
     });
     
-    // Sort days chronologically
     const sortedDays = Array.from(uniqueDays).sort();
     
-    // Sort time slots chronologically
+    // Sort time slots chronologically with smart late-night handling
     const sortedTimeSlots = Array.from(uniqueTimeSlots).sort((a, b) => {
       const timeA = a.split(' - ')[0];
       const timeB = b.split(' - ')[0];
-      return new Date(`2000-01-01T${timeA}`) - new Date(`2000-01-01T${timeB}`);
+      
+      // Convert to minutes for smart sorting
+      const getMinutes = (timeStr) => {
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        // Treat early morning hours (00:xx - 05:xx) as late night (add 24 hours)
+        return hours < 6 ? (hours + 24) * 60 + minutes : hours * 60 + minutes;
+      };
+      
+      return getMinutes(timeA) - getMinutes(timeB);
     });
     
     return {

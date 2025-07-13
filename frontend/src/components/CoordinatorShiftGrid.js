@@ -66,6 +66,21 @@ function formatDate(dateStr) {
   return `${germanDay} ${parts[1]} ${parts[2]}`;
 }
 
+// Smart grouping: late night shifts (00:xx-05:xx) belong to previous day visually
+function getShiftDisplayDate(shift) {
+  const startTime = new Date(shift.start_time);
+  const hour = startTime.getHours();
+  
+  // If shift starts between midnight and 6 AM, it belongs to previous day visually
+  if (hour >= 0 && hour < 6) {
+    const prevDay = new Date(startTime);
+    prevDay.setDate(prevDay.getDate() - 1);
+    return prevDay.toDateString();
+  }
+  
+  return startTime.toDateString();
+}
+
 const ShiftCard = styled(Card)(({ theme, staffingLevel }) => {
   let backgroundColor, borderColor;
   
@@ -180,16 +195,27 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
     const grouped = {};
     
     shiftsWithAssignments.forEach(shift => {
-      const date = new Date(shift.start_time).toDateString();
+      // Use smart display date instead of actual start date
+      const date = getShiftDisplayDate(shift);
       if (!grouped[date]) {
         grouped[date] = [];
       }
       grouped[date].push(shift);
     });
     
-    // Sort shifts within each date by start time
+    // Sort shifts within each date by start time with smart late-night handling
     Object.keys(grouped).forEach(date => {
-      grouped[date].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+      grouped[date].sort((a, b) => {
+        const getMinutes = (dateTime) => {
+          const time = new Date(dateTime);
+          const hours = time.getHours();
+          const minutes = time.getMinutes();
+          // Treat early morning hours (0-5) as late night
+          return hours < 6 ? (hours + 24) * 60 + minutes : hours * 60 + minutes;
+        };
+        
+        return getMinutes(a.start_time) - getMinutes(b.start_time);
+      });
     });
     
     return grouped;

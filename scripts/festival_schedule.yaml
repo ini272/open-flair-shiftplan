@@ -1,0 +1,97 @@
+festival:
+  name: "Open Flair 2025"
+  start_date: "2025-08-06"
+  end_date: "2025-08-10"
+  
+locations:
+  - name: "Weinzelt"
+  - name: "Bierwagen"
+
+# Define shifts by day with specific times and capacities
+schedule:
+  "2025-08-06":  # Wednesday - Setup day
+    shifts:
+      - start_time: "16:00"
+        end_time: "18:00"
+        capacity: 4
+  
+  "2025-08-07":  # Thursday - First day
+    shifts:
+      - start_time: "14:00"
+        end_time: "16:00"
+        capacity: 4
+      - start_time: "16:00"
+        end_time: "18:00"
+        capacity: 4
+      - start_time: "18:00"
+        end_time: "20:00"
+        capacity: 6
+      - start_time: "20:00"
+        end_time: "22:00"
+        capacity: 6
+      - start_time: "22:00"
+        end_time: "00:00"
+        capacity: 6
+  
+  "2025-08-08":  # Friday - Busy day
+    shifts:
+      - start_time: "14:00"
+        end_time: "16:00"
+        capacity: 4
+      - start_time: "16:00"
+        end_time: "18:00"
+        capacity: 5
+      - start_time: "18:00"
+        end_time: "20:00"
+        capacity: 6
+      - start_time: "20:00"
+        end_time: "22:00"
+        capacity: 6
+      - start_time: "22:00"
+        end_time: "00:00"
+        capacity: 6
+      - start_time: "00:00"
+        end_time: "02:00"
+        capacity: 4
+  
+  "2025-08-09":  # Saturday - Busiest day
+    shifts:
+      - start_time: "12:00"
+        end_time: "14:00"
+        capacity: 5
+      - start_time: "14:00"
+        end_time: "16:00"
+        capacity: 6
+      - start_time: "16:00"
+        end_time: "18:00"
+        capacity: 6
+      - start_time: "18:00"
+        end_time: "20:00"
+        capacity: 6
+      - start_time: "20:00"
+        end_time: "22:00"
+        capacity: 6
+      - start_time: "22:00"
+        end_time: "00:00"
+        capacity: 6
+      - start_time: "00:00"
+        end_time: "02:00"
+        capacity: 4
+  
+  "2025-08-10":  # Sunday - Wind down
+    shifts:
+      - start_time: "12:00"
+        end_time: "14:00"
+        capacity: 6
+      - start_time: "14:00"
+        end_time: "16:00"
+        capacity: 6
+      - start_time: "16:00"
+        end_time: "18:00"
+        capacity: 6
+      - start_time: "18:00"
+        end_time: "20:00"
+        capacity: 6
+      - start_time: "20:00"
+        end_time: "22:00"
+        capacity: 4
