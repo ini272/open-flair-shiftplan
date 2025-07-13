@@ -69,23 +69,46 @@ const AccountAccessPage = () => {
     setNewUserError('');
     setNewUserLoading(true);
     
-    console.log('Creating new user:', { name, email, workPreference, groupName });
-    
     try {
-      // Validate inputs
+      // Validate inputs first
       if (!name.trim()) {
-        throw new Error('Please enter your name');
+        throw new Error('Bitte geben Sie Ihren Namen ein');
       }
       
       if (!email.trim()) {
-        throw new Error('Please enter your email');
+        throw new Error('Bitte geben Sie Ihre E-Mail-Adresse ein');
       }
       
       if (workPreference === 'group' && !groupName.trim()) {
-        throw new Error('Please enter a group name');
+        throw new Error('Bitte geben Sie einen Gruppennamen ein');
       }
       
-      // Create user
+      // If working in a group, check if group is full BEFORE creating user
+      if (workPreference === 'group') {
+        try {
+          const groupsResponse = await groupService.getGroups();
+          const existingGroup = groupsResponse.data.find(g => g.name === groupName);
+          
+          if (existingGroup) {
+            // Check if group is full by getting group details
+            const groupDetails = await groupService.getGroup(existingGroup.id);
+            const currentSize = groupDetails.data.users ? groupDetails.data.users.length : 0;
+            const maxSize = 4; // You might want to get this from coordinator settings later
+            
+            if (currentSize >= maxSize) {
+              throw new Error(`Die Gruppe "${groupName}" ist voll (maximal ${maxSize} Mitglieder). Bitte wählen Sie einen anderen Gruppennamen oder arbeiten Sie alleine.`);
+            }
+          }
+        } catch (groupErr) {
+          if (groupErr.message && groupErr.message.includes('voll')) {
+            throw groupErr; // Re-throw our custom error
+          }
+          // If it's just a network error checking groups, continue
+          console.warn('Could not check group status:', groupErr);
+        }
+      }
+      
+      // Now create the user
       const userResponse = await userService.createUser({
         username: name,
         email: email
@@ -100,34 +123,47 @@ const AccountAccessPage = () => {
       // If working in a group, join or create the group
       if (workPreference === 'group') {
         try {
-          // Try to find if group exists
           const groupsResponse = await groupService.getGroups();
           const existingGroup = groupsResponse.data.find(g => g.name === groupName);
           
           if (existingGroup) {
             // Join existing group
-            await groupService.addUserToGroup(existingGroup.id, userResponse.data.id);
+            await groupService.addUserToGroup(existingGroup.id, userResponse.data.id, 4);
             console.log('Joined existing group:', existingGroup.name);
           } else {
             // Create new group
             const newGroupResponse = await groupService.createGroup({ name: groupName });
-            await groupService.addUserToGroup(newGroupResponse.data.id, userResponse.data.id);
+            await groupService.addUserToGroup(newGroupResponse.data.id, userResponse.data.id, 4);
             console.log('Created and joined new group:', groupName);
           }
         } catch (groupErr) {
-          console.error('Error with group:', groupErr);
-          // Create group if it doesn't exist
-          const newGroupResponse = await groupService.createGroup({ name: groupName });
-          await groupService.addUserToGroup(newGroupResponse.data.id, userResponse.data.id);
-          console.log('Created and joined new group (fallback):', groupName);
+          // If group joining fails, we need to clean up the user
+          console.error('Group joining failed, cleaning up user:', groupErr);
+          
+          try {
+            await userService.deleteUser(userResponse.data.id);
+            console.log('Successfully cleaned up user after group join failure');
+          } catch (cleanupErr) {
+            console.error('Failed to cleanup user:', cleanupErr);
+          }
+          
+          // Show German error message
+          if (groupErr.response && groupErr.response.status === 400 && groupErr.response.data.detail) {
+            // Use the backend error message if it's in German
+            if (groupErr.response.data.detail.includes('voll') || groupErr.response.data.detail.includes('full')) {
+              throw new Error(`Die Gruppe "${groupName}" ist voll (maximal 4 Mitglieder). Bitte wählen Sie einen anderen Gruppennamen oder arbeiten Sie alleine.`);
+            }
+          }
+          throw new Error('Fehler beim Beitreten zur Gruppe. Bitte versuchen Sie es erneut.');
         }
       }
       
       console.log('Navigating to dashboard...');
       navigate('/dashboard');
+      
     } catch (err) {
       console.error('Error during new user setup:', err);
-      setNewUserError(err.message || 'Failed to create user. Please try again.');
+      setNewUserError(err.message || 'Fehler beim Erstellen des Benutzers. Bitte versuchen Sie es erneut.');
     } finally {
       setNewUserLoading(false);
     }
