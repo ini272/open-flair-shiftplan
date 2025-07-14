@@ -467,13 +467,13 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                                 <UserChip
                                   key={`group-${group.name}`}
                                   avatar={<Avatar sx={{ backgroundColor: 'secondary.main' }}><GroupIcon fontSize="small" /></Avatar>}
-                                  label={`${group.users.map(user => user.username).join(', ')}`}
+                                  label={group.users.map(user => user.username).join(', ')}
                                   size="small"
                                   color="secondary"
                                   onDelete={() => handleRemoveGroup(shift, group.name)}
                                   deleteIcon={<CloseIcon />}
                                   sx={{ 
-                                    maxWidth: '200px', // Prevent super long chips
+                                    maxWidth: '300px',
                                     '& .MuiChip-label': {
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
@@ -593,7 +593,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                         </Avatar>
                       </ListItemAvatar>
                       <ListItemText 
-                        primary={group.name}
+                        primary={`${group.name} (${group.users?.map(u => u.username).join(', ') || 'No members'})`}
                         secondary={`${group.users?.length || 0} Mitglieder`}
                       />
                     </ListItem>

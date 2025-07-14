@@ -133,7 +133,6 @@ const CoordinatorView = ({ shifts, users }) => {
           groupsResponse.data.forEach(group => {
             groupMap[group.id] = group.name;
           });
-          console.log('Loaded group names:', groupMap); // Debug log
           setGroupNames(groupMap);
         } catch (error) {
           console.log('Failed to load group names:', error);
@@ -350,14 +349,7 @@ const CoordinatorView = ({ shifts, users }) => {
                       <Typography variant="subtitle2">
                         {user.username}
                       </Typography>
-                      <Box>
-                        {console.log(`Debug user ${user.username}:`, {
-                          user_full: user,
-                          group_id: user.group_id,
-                          group_id_type: typeof user.group_id,
-                          group_id_truthy: !!user.group_id
-                        })}
-                        
+                      <Box>                    
                         {user.group_id && (
                           <Chip 
                             icon={<GroupIcon />}
