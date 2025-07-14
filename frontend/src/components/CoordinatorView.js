@@ -32,6 +32,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import BlockIcon from '@mui/icons-material/Block';
 import CoordinatorShiftGrid from './CoordinatorShiftGrid';
 import { shiftService } from '../services/api';
+import { groupService } from '../services/api';
 import { translations } from '../utils/translations';
 
 const StatsCard = styled(Card)(({ theme }) => ({
@@ -79,6 +80,7 @@ const CoordinatorView = ({ shifts, users }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [expandedUsers, setExpandedUsers] = useState(new Set());
   const [userOptOuts, setUserOptOuts] = useState({});
+  const [groupNames, setGroupNames] = useState({});
   
   const theme = useTheme();
 
@@ -124,7 +126,22 @@ const CoordinatorView = ({ shifts, users }) => {
         setUserOptOuts(optOutMap);
       };
 
+      const loadGroupNames = async () => {
+        try {
+          const groupsResponse = await groupService.getGroups();
+          const groupMap = {};
+          groupsResponse.data.forEach(group => {
+            groupMap[group.id] = group.name;
+          });
+          console.log('Loaded group names:', groupMap); // Debug log
+          setGroupNames(groupMap);
+        } catch (error) {
+          console.log('Failed to load group names:', error);
+        }
+      };
+
       loadOptOuts();
+      loadGroupNames();
     }
   }, [drawerOpen, users]);
 
@@ -140,7 +157,7 @@ const CoordinatorView = ({ shifts, users }) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        group: user.group,
+        group_id: user.group_id,
         shiftCount: 0,
         shifts: []
       };
@@ -333,24 +350,28 @@ const CoordinatorView = ({ shifts, users }) => {
                       <Typography variant="subtitle2">
                         {user.username}
                       </Typography>
-                      {user.group ? (
-                        <Chip 
-                          icon={<GroupIcon />}
-                          label={user.group.name || 'Team'}
-                          size="small"
-                          variant="outlined"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      ) : (
-                        <Chip 
-                          icon={<PersonIcon />}
-                          label="Individual"
-                          size="small"
-                          variant="outlined"
-                          color="secondary"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      )}
+                      <Box>
+                        {console.log(`Debug user ${user.username}:`, {
+                          user_full: user,
+                          group_id: user.group_id,
+                          group_id_type: typeof user.group_id,
+                          group_id_truthy: !!user.group_id
+                        })}
+                        
+                        {user.group_id && (
+                          <Chip 
+                            icon={<GroupIcon />}
+                            label={groupNames[user.group_id] || `Team ${user.group_id}`}
+                            size="small"
+                            variant="filled"
+                            color="secondary"
+                            sx={{ 
+                              fontSize: '0.7rem',
+                              height: '20px'
+                            }}
+                          />
+                        )}
+                      </Box>
                     </Box>
                     <Typography variant="caption" color="text.secondary">
                       {user.email}
@@ -438,7 +459,8 @@ const CoordinatorView = ({ shifts, users }) => {
                   </Box>
                 </Collapse>
 
-                {user.shifts.length > 0 && !isExpanded && (
+                {/* Remove or comment out this entire section (around line 280-300): */}
+                {/* {user.shifts.length > 0 && !isExpanded && (
                   <Box sx={{ mt: 0.5 }}>
                     {user.shifts.slice(0, 2).map((shift) => (
                       <ShiftChip
@@ -456,7 +478,7 @@ const CoordinatorView = ({ shifts, users }) => {
                       </Typography>
                     )}
                   </Box>
-                )}
+                )} */}
               </UserListItem>
             );
           })}

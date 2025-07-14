@@ -456,22 +456,30 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                           <strong>{translations.shifts.capacity}:</strong> {currentStaff}/{shift.capacity || '∞'}
                         </Typography>
                         
-                        {/* Assigned Groups */}
+                        {/* Assigned Groups - Show Members */}
                         {shift.groups && shift.groups.length > 0 && (
                           <Box sx={{ mb: 1 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                              Gruppen:
+                              Teams:
                             </Typography>
                             <Stack direction="row" spacing={0.5} flexWrap="wrap">
                               {shift.groups.map(group => (
                                 <UserChip
                                   key={`group-${group.name}`}
-                                  avatar={<Avatar><GroupIcon fontSize="small" /></Avatar>}
-                                  label={`${group.name} (${group.users.length})`}
+                                  avatar={<Avatar sx={{ backgroundColor: 'secondary.main' }}><GroupIcon fontSize="small" /></Avatar>}
+                                  label={`${group.users.map(user => user.username).join(', ')}`}
                                   size="small"
                                   color="secondary"
                                   onDelete={() => handleRemoveGroup(shift, group.name)}
                                   deleteIcon={<CloseIcon />}
+                                  sx={{ 
+                                    maxWidth: '200px', // Prevent super long chips
+                                    '& .MuiChip-label': {
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }
+                                  }}
                                 />
                               ))}
                             </Stack>
