@@ -317,19 +317,33 @@ const DashboardPage = () => {
       for (const { shift, action } of shiftsToProcess) {
         if (action === 'opt_in') {
           operations.push(
-            shiftService.optInUser({
-              shift_id: shift.id,
-              user_id: user.id
-            }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
-              .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
+            user.group_id ? 
+              shiftService.optInGroup({
+                shift_id: shift.id,
+                group_id: user.group_id
+              }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
+                .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
+            :
+              shiftService.optInUser({
+                shift_id: shift.id,
+                user_id: user.id
+              }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
+                .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
           );
         } else {
           operations.push(
-            shiftService.optOutUser({
-              shift_id: shift.id,
-              user_id: user.id
-            }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
-              .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
+            user.group_id ?
+              shiftService.optOutGroup({
+                shift_id: shift.id,
+                group_id: user.group_id
+              }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
+                .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
+            :
+              shiftService.optOutUser({
+                shift_id: shift.id,
+                user_id: user.id
+              }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
+                .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
           );
         }
       }
