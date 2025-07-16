@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link, Stack, Chip
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link, Stack, Chip, ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import { 
   OpenInNew as OpenInNewIcon,
@@ -28,7 +28,57 @@ const DashboardPage = () => {
   const [batchPendingDays, setBatchPendingDays] = useState({}); // New state for batch operations
   const [currentTab, setCurrentTab] = useState(0);
   const [userGroup, setUserGroup] = useState(null);
+  const [locationPreference, setLocationPreference] = useState('both');
   const navigate = useNavigate();
+
+  // Add this helper function at the top of the component:
+  const getShiftLocation = (shiftTitle) => {
+    const title = shiftTitle.toLowerCase();
+    if (title.includes('weinzelt')) return 'weinzelt';
+    if (title.includes('bierwagen')) return 'bierwagen';
+    return 'unknown';
+  };
+
+  // Add this handler function:
+  const handleLocationChange = async (event, newLocation) => {
+    if (!newLocation) return; // Prevent deselecting all options
+    
+    setLocationPreference(newLocation);
+    
+    if (newLocation === 'both') {
+      // Simple approach: Opt in to ALL shifts (make everything green)
+      const allShifts = shifts.filter(shift => {
+        const shiftLocation = getShiftLocation(shift.title);
+        return shiftLocation === 'weinzelt' || shiftLocation === 'bierwagen';
+      });
+      
+      if (allShifts.length > 0) {
+        await handleBatchDayToggle(allShifts, true); // Opt in to everything
+      }
+    } else {
+      // Filter shifts by location and batch opt-out from unwanted location
+      const targetLocation = newLocation;
+      const shiftsToOptOut = shifts.filter(shift => {
+        const shiftLocation = getShiftLocation(shift.title);
+        return shiftLocation !== targetLocation && shiftLocation !== 'unknown';
+      });
+      
+      const shiftsToOptIn = shifts.filter(shift => {
+        const shiftLocation = getShiftLocation(shift.title);
+        return shiftLocation === targetLocation;
+      });
+      
+      // Batch opt-out from unwanted location
+      if (shiftsToOptOut.length > 0) {
+        await handleBatchDayToggle(shiftsToOptOut, false);
+      }
+      
+      // Batch opt-in to preferred location
+      if (shiftsToOptIn.length > 0) {
+        await handleBatchDayToggle(shiftsToOptIn, true);
+      }
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -497,6 +547,29 @@ const DashboardPage = () => {
             {translations.shifts.clickToToggle}
           </Typography>
           
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Standort-Präferenz
+            </Typography>
+            <ToggleButtonGroup
+              value={locationPreference}
+              exclusive
+              onChange={handleLocationChange}
+              aria-label="location preference"
+              sx={{ mb: 2 }}
+            >
+              <ToggleButton value="both">
+                Beide Standorte
+              </ToggleButton>
+              <ToggleButton value="weinzelt">
+                Nur Weinzelt
+              </ToggleButton>
+              <ToggleButton value="bierwagen">
+                Nur Bierwagen
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          
           <ShiftGrid 
             shifts={shifts} 
             userPreferences={availableShiftIds} 
@@ -531,6 +604,62 @@ const DashboardPage = () => {
       </Snackbar>
     </Container>
   );
+};
+
+// Add this function with the other handlers:
+const handleBatchToggle = async (shiftsToToggle, shouldSelect) => {
+  if (!shiftsToToggle || shiftsToToggle.length === 0) return;
+  
+  // Set pending state for all shifts
+  const newPending = {};
+  shiftsToToggle.forEach(shift => {
+    newPending[shift.id] = true;
+  });
+  setPendingOperations(prev => ({ ...prev, ...newPending }));
+  
+  try {
+    // Process shifts in batches to avoid overwhelming the API
+    const batchSize = 5;
+    for (let i = 0; i < shiftsToToggle.length; i += batchSize) {
+      const batch = shiftsToToggle.slice(i, i + batchSize);
+      const promises = batch.map(shift => {
+        const isCurrentlySelected = availableShiftIds.includes(shift.id);
+        
+        if (shouldSelect && !isCurrentlySelected) {
+          // Opt in to shift
+          return preferenceService.setPreference({
+            user_id: user.id,
+            shift_id: shift.id,
+            can_work: true
+          });
+        } else if (!shouldSelect && isCurrentlySelected) {
+          // Opt out of shift
+          return preferenceService.setPreference({
+            user_id: user.id,
+            shift_id: shift.id,
+            can_work: false
+          });
+        }
+        return Promise.resolve(); // No change needed
+      });
+      
+      await Promise.all(promises);
+    }
+    
+    // Refresh data
+    await loadUserPreferences();
+    
+  } catch (error) {
+    console.error('Error in batch toggle:', error);
+    setError('Failed to update preferences');
+  } finally {
+    // Clear pending state
+    const clearedPending = {};
+    shiftsToToggle.forEach(shift => {
+      clearedPending[shift.id] = undefined;
+    });
+    setPendingOperations(prev => ({ ...prev, ...clearedPending }));
+  }
 };
 
 export default DashboardPage;
