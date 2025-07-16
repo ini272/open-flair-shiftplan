@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
@@ -14,11 +14,17 @@ import {
   FormLabel,
   RadioGroup,
   FormControlLabel,
-  Radio
+  Radio,
+  Autocomplete,
+  MenuItem,
+  Select,
+  InputLabel,
+  FormControl as MuiFormControl
 } from '@mui/material';
 import { userService, groupService } from '../services/api';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
+import GroupIcon from '@mui/icons-material/Group';
 
 // Tab panel component
 function TabPanel(props) {
@@ -57,6 +63,41 @@ const AccountAccessPage = () => {
   const [returningEmail, setReturningEmail] = useState('');
   const [returningError, setReturningError] = useState('');
   const [returningLoading, setReturningLoading] = useState(false);
+
+  const [existingGroups, setExistingGroups] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
+  useEffect(() => {
+    const loadExistingGroups = async () => {
+      try {
+        setLoadingGroups(true);
+        const response = await groupService.getGroups();
+        const basicGroups = response.data || [];
+        
+        // Fetch detailed info for each group to get members
+        const groupsWithMembers = await Promise.all(
+          basicGroups.map(async (group) => {
+            try {
+              const groupDetailResponse = await groupService.getGroup(group.id);
+              return groupDetailResponse.data;
+            } catch (error) {
+              console.error(`Error fetching details for group ${group.id}:`, error);
+              return { ...group, users: [] }; // Fallback
+            }
+          })
+        );
+        
+        setExistingGroups(groupsWithMembers);
+      } catch (error) {
+        console.log('Could not load existing groups:', error);
+        // Not critical - user can still type manually
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    
+    loadExistingGroups();
+  }, []);
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {
@@ -271,14 +312,58 @@ const AccountAccessPage = () => {
               </FormControl>
               
               {workPreference === 'group' && (
-                <TextField
-                  label={translations.account.group}
-                  fullWidth
-                  margin="normal"
+                <Autocomplete
+                  freeSolo
+                  options={existingGroups.map(group => group.name)}
                   value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  required
-                  helperText="Gib eine bestehende Gruppe ein oder erstelle eine neue"
+                  onChange={(event, newValue) => {
+                    setGroupName(newValue || '');
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setGroupName(newInputValue);
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label={translations.account.group}
+                      fullWidth
+                      margin="normal"
+                      required
+                      helperText="Wähle eine bestehende Gruppe oder erstelle eine neue"
+                      disabled={loadingGroups}
+                    />
+                  )}
+                  renderOption={(props, option) => {
+                    const group = existingGroups.find(g => g.name === option);
+                    const memberNames = group?.users?.map(u => u.username).join(', ') || '';
+                    const currentSize = group?.users?.length || 0;
+                    const maxSize = 4; // You might want to get this from coordinator settings later
+                    const isFull = currentSize >= maxSize;
+                    
+                    return (
+                      <li {...props}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <GroupIcon fontSize="small" />
+                          <Box>
+                            <Typography variant="body2">
+                              {option}
+                              {memberNames && (
+                                <Typography component="span" variant="body2" color="text.secondary">
+                                  {' '}({memberNames})
+                                </Typography>
+                              )}
+                            </Typography>
+                            <Typography variant="caption" color={isFull ? "error.main" : "text.secondary"}>
+                              {currentSize}/{maxSize} Mitglieder
+                              {isFull && ' - Voll'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </li>
+                    );
+                  }}
+                  noOptionsText="Keine Gruppen gefunden - gib einen Namen ein um eine neue zu erstellen"
+                  loading={loadingGroups}
                 />
               )}
               
