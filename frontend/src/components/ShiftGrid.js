@@ -9,7 +9,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import { translations } from '../utils/translations';
 
 // Enhanced styled component for shift cells with more pronounced visual feedback
-const ShiftCell = styled(Box)(({ theme, selected, isPending }) => ({
+const ShiftCell = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isPending' && prop !== 'selected'
+})(({ theme, selected, isPending }) => ({
   padding: theme.spacing(1.5),
   margin: theme.spacing(0.5),
   borderRadius: theme.shape.borderRadius,
