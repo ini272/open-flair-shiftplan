@@ -8,25 +8,16 @@ services:
     volumes:
       - .:/app  # Mount current directory for live reloading
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    depends_on:
-      - jaeger
 
   frontend:
-    image: node:16-alpine
+    image: node:24-alpine
     working_dir: /app
     volumes:
       - ./frontend:/app
     ports:
       - "3000:3000"
-    command: sh -c "npm install --no-optional && DISABLE_ESLINT_PLUGIN=true npm start"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     environment:
       - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true
-      - WDS_SOCKET_PORT=0
     depends_on:
       - fastapi
-
-  jaeger:
-    image: jaegertracing/jaeger
-    ports:
-      - "16686:16686"  # UI port

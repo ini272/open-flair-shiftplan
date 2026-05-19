@@ -1,7 +1,6 @@
-import time
 import os
+import time
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.tracing import setup_tracing
@@ -12,9 +11,11 @@ from app.routes import user, auth, protected, group, shift, preferences
 Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI with metadata
-app = FastAPI(title="FastAPI Tracing Demo", 
-              description="A demo application showing tracing capabilities in FastAPI",
-              version="0.1.0")
+app = FastAPI(
+    title="Open Flair Shift Planner",
+    description="Volunteer shift planning for Open Flair festival coordination.",
+    version="0.2.0",
+)
 
 # Set up tracing
 tracer = setup_tracing(app)
@@ -23,21 +24,23 @@ tracer = setup_tracing(app)
 ENV = os.getenv("NODE_ENV", "development")
 IS_PRODUCTION = ENV == "production"
 
-# Add middleware based on environment
-if IS_PRODUCTION:
-    # CORS for production
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["https://weinzelt.duckdns.org"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Add CORS only when the frontend is served from a different origin.
+configured_origins = os.getenv("CORS_ORIGINS")
+if configured_origins:
+    cors_origins = [
+        origin.strip()
+        for origin in configured_origins.split(",")
+        if origin.strip()
+    ]
+elif IS_PRODUCTION:
+    cors_origins = []
 else:
-    # CORS for development
+    cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+if cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],  # React app's address
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -62,15 +65,7 @@ async def add_process_time_header(request: Request, call_next):
     print(f"Request to {request.url.path} took {process_time:.4f} seconds")
     return response
 
-# Handle favicon.ico requests to prevent 404 errors
-# @app.get("/favicon.ico", include_in_schema=False)
-# async def favicon():
-#     # Adjust the path to look for favicon.ico in the project root
-#     current_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-#     favicon_path = os.path.join(current_dir, "favicon.ico")
-#     return FileResponse(favicon_path)
-
 # Root endpoint
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Open Flair Shift Planner API"}

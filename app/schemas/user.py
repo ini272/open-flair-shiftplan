@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 class UserBase(BaseModel):
     """Base schema with common user attributes"""
@@ -18,15 +18,14 @@ class UserUpdate(UserBase):
 
 class User(UserBase):
     """Schema for returning user data"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     email: EmailStr
     username: str
     is_active: bool
     is_coordinator: bool  # Add this line
     group_id: Optional[int] = None
-    
-    class Config:
-        orm_mode = True
 
 # Add this new schema for email lookup
 class EmailLookup(BaseModel):

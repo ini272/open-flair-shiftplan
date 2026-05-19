@@ -1,9 +1,10 @@
 import axios from 'axios';
 
-// Use different API URLs for dev vs prod
-const API_URL = process.env.NODE_ENV === 'production' 
-  ? `${window.location.protocol}//${window.location.host}` // Use current protocol (https) and host
-  : 'http://localhost:8000'; // In development, direct to FastAPI
+const API_URL = import.meta.env.VITE_API_URL || (
+  import.meta.env.PROD
+    ? `${window.location.protocol}//${window.location.host}`
+    : `${window.location.protocol}//${window.location.hostname}:8000`
+);
 
 // Create axios instance
 const api = axios.create({

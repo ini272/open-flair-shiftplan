@@ -4,14 +4,16 @@ from typing import Optional
 
 from app.database import get_db
 from app.crud.token import token as token_crud
+from app.tracing import NoopTracer
 
 def get_tracer():
     """
-    Returns the global tracer instance.
-    This will be useful when we need the tracer in other modules.
+    Returns the application tracer.
+
+    Tracing is currently intentionally disabled for the home-server prototype,
+    but route code still uses span calls for structured instrumentation.
     """
-    from opentelemetry import trace
-    return trace.get_tracer(__name__)
+    return NoopTracer()
 
 def require_auth(
     access_token: Optional[str] = Cookie(None),

@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 class ShiftBase(BaseModel):
     """Base schema with common shift attributes"""
@@ -11,13 +11,8 @@ class ShiftBase(BaseModel):
     capacity: Optional[int] = None
     is_active: Optional[bool] = None
 
-class ShiftCreate(ShiftBase):
-    """Schema for creating a shift"""
-    title: str
-    start_time: datetime
-    end_time: datetime
-    
-    @validator('start_time', 'end_time', pre=True)
+    @field_validator('start_time', 'end_time', mode='before')
+    @classmethod
     def parse_datetime(cls, value):
         """Convert string datetime to Python datetime object"""
         if isinstance(value, str):
@@ -35,33 +30,34 @@ class ShiftCreate(ShiftBase):
                     except ValueError:
                         raise ValueError(f"Invalid datetime format: {value}")
         return value
-    
-    @validator('end_time')
-    def end_time_must_be_after_start_time(cls, v, values):
-        if 'start_time' in values and v <= values['start_time']:
-            raise ValueError('end_time must be after start_time')
-        return v
-    
-    @validator('capacity')
+
+    @field_validator('capacity')
+    @classmethod
     def capacity_must_be_positive(cls, v):
         if v is not None and v <= 0:
             raise ValueError('capacity must be positive or null for unlimited')
         return v
 
+class ShiftCreate(ShiftBase):
+    """Schema for creating a shift"""
+    title: str
+    start_time: datetime
+    end_time: datetime
+
+    @model_validator(mode='after')
+    def end_time_must_be_after_start_time(self):
+        if self.end_time <= self.start_time:
+            raise ValueError('end_time must be after start_time')
+        return self
+
 class ShiftUpdate(ShiftBase):
     """Schema for updating a shift"""
-    
-    @validator('end_time')
-    def end_time_must_be_after_start_time(cls, v, values):
-        if v is not None and 'start_time' in values and values['start_time'] is not None and v <= values['start_time']:
+
+    @model_validator(mode='after')
+    def end_time_must_be_after_start_time(self):
+        if self.start_time is not None and self.end_time is not None and self.end_time <= self.start_time:
             raise ValueError('end_time must be after start_time')
-        return v
-    
-    @validator('capacity')
-    def capacity_must_be_positive(cls, v):
-        if v is not None and v <= 0:
-            raise ValueError('capacity must be positive or null for unlimited')
-        return v
+        return self
 
 class ShiftUserBase(BaseModel):
     """Base schema for shift-user assignments"""
@@ -75,20 +71,20 @@ class ShiftGroupBase(BaseModel):
 
 class ShiftUser(ShiftUserBase):
     """Schema for returning shift-user assignment"""
+    model_config = ConfigDict(from_attributes=True)
+
     assigned_at: datetime
-    
-    class Config:
-        orm_mode = True
 
 class ShiftGroup(ShiftGroupBase):
     """Schema for returning shift-group assignment"""
+    model_config = ConfigDict(from_attributes=True)
+
     assigned_at: datetime
-    
-    class Config:
-        orm_mode = True
 
 class Shift(ShiftBase):
     """Schema for returning shift data"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     start_time: datetime
@@ -97,21 +93,17 @@ class Shift(ShiftBase):
     created_at: datetime
     is_active: bool
     current_user_count: int
-    
-    class Config:
-        orm_mode = True
 
 class ShiftWithAssignees(Shift):
     """Schema for returning shift with assignee details"""
+    model_config = ConfigDict(from_attributes=True)
+
     users: List['User'] = []
     groups: List['Group'] = []
-    
-    class Config:
-        orm_mode = True
 
 # Avoid circular imports by importing these after the class definitions
 from app.schemas.user import User
 from app.schemas.group import Group
 
 # Update forward references
-ShiftWithAssignees.update_forward_refs()
+ShiftWithAssignees.model_rebuild()

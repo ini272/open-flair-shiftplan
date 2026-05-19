@@ -1,130 +1,79 @@
 # Open Flair Festival Shift Scheduler
 
 ## Project Overview
-A custom web application for managing volunteer shifts at the Open Flair festival (August 2-11, 2025). Built for a small team of coordinators and volunteers, deployed on Google Cloud for one-time use.
+
+A custom web application for coordinating volunteer shifts at Open Flair Festival 2026, currently being prepared for a coordinator-facing showcase and possible home-server pilot.
+
+The goal is practical: let members mark which shifts they cannot work before arrival, then let the coordinator generate a first-pass plan and adjust it manually. If the process does not land, the existing paper workflow can still be used as fallback.
 
 ## Architecture
-- **Backend**: FastAPI with SQLAlchemy ORM, SQLite database
-- **Frontend**: React with Material-UI, German localization
-- **Deployment**: Docker Compose on Google Cloud
-- **Observability**: Jaeger tracing integration
+
+- **Backend**: FastAPI with SQLAlchemy ORM and SQLite
+- **Frontend**: React with Material UI and German localization
+- **Deployment target**: Docker Compose on a home server or local LAN
+- **Database**: SQLite persisted in `./data` for production compose
 
 ## Key Features
-- Token-based authentication with role-based access (coordinators vs regular users)
-- Manual shift creation and assignment by coordinators
-- User preference system and opt-out functionality
-- Responsive web interface (primarily PC usage)
-- German language support
 
-## Core Models & Relationships
+- Token-based access flow without member passwords
+- User onboarding for solo workers or small groups
+- Shift availability opt-outs by individual or group
+- Fast day/location selection for Weinzelt and Bierwagen
+- Coordinator dashboard with assignment statistics
+- First-pass shift-plan generation plus manual add/remove controls
+
+## Core Models
+
+```text
+User (email, username, is_coordinator, is_active, group_id)
+Group (name, is_active)
+Shift (title, description, start_time, end_time, capacity, is_active)
+AccessToken (token, name, expires_at, is_active, is_coordinator_token)
 ```
-User (email, username, is_coordinator, is_active)
-├── Many-to-Many → Shifts (via shift_users association)
-├── Many-to-Many → Groups (via user_groups association)
-└── One-to-Many → ShiftPreferences
 
-Shift (name, description, start_time, end_time, location, max_users)
-├── Many-to-Many → Users
-└── Many-to-Many → Groups
-
-Group (name, description, is_active)
-└── Many-to-Many → Users
-
-AccessToken (token, name, user_id, expires_at)
-```
+Users can belong to one group. Shifts can have assigned users and groups, and opt-outs are tracked separately for users and groups.
 
 ## Festival Context
-- **Dates**: August 2-11, 2025
-- **Locations**: Weinzelt, Bierwagen (expandable)
-- **Workflow**: Coordinators manually create shifts, users can express preferences/opt-outs
-- **Scale**: Small team, one-time event
 
-## Technical Stack
-### Backend (`/app`)
-- FastAPI with automatic OpenAPI docs
-- SQLAlchemy models with association tables
-- Generic CRUD base classes
-- Pydantic schemas for validation
-- Token-based auth system
-
-### Frontend (`/frontend`)
-- React 18 with Material-UI v5
-- Axios for API communication
-- React Router for navigation
-- Custom theming with Open Flair branding
-- Components: Login, Dashboard, CoordinatorView, ShiftGrid
-
-### Key Files Structure
-```
-app/
-├── main.py                 # FastAPI app setup
-├── database.py            # SQLAlchemy config
-├── models/               # SQLAlchemy models
-├── schemas/              # Pydantic schemas
-├── crud/                 # Database operations
-├── routes/               # API endpoints
-└── dependencies.py       # Auth dependencies
-
-frontend/src/
-├── components/           # React components
-├── pages/               # Page components
-├── services/api.js      # API client
-└── utils/translations.js # German translations
-```
-
-## Deployment
-- **Development**: `docker-compose.yml` with live reload
-- **Production**: `docker-compose.prod.yml` with Nginx, HTTPS, persistent SQLite
-- **Database**: SQLite with persistent volume mounting
-- **SSL**: Let's Encrypt certificates (manual renewal)
+- **Dates**: 5-9 August 2026
+- **Location**: Eschwege, Germany
+- **Shift locations**: Weinzelt and Bierwagen by default
+- **Scale**: Small volunteer team, coordinator-operated
 
 ## Current Status
-- ✅ Core functionality implemented
-- ✅ Deployed on Google Cloud
-- ✅ Basic testing suite with pytest
-- 🔄 German translations may need completion
-- 🔄 Festival shifts created manually by coordinators
 
-## Setup Script
-`scripts/create_festival_shifts.py` - Creates base shifts for festival dates and locations
+- Core planning flow is implemented.
+- Docker-based local/home-server deployment is the intended path.
+- The old public DNS, certificate, and cloud-server assumptions were removed from active config.
+- The old external tracing experiment was removed from active dependencies.
+- The app still needs authorization hardening before real participant data is exposed beyond a trusted LAN.
 
-## Testing
-Comprehensive pytest suite covering:
-- Authentication flows
-- User/group management
-- Shift operations
-- Preferences and opt-outs
-- Protected routes
+## Quick Start
 
-## Known Limitations
-- SQLite database (sufficient for scale)
-- No automatic shift assignment logic
-- Manual certificate renewal required
-- No database migration system
-- Token refresh not implemented
-
-## Quick Start Commands
 ```bash
 # Development
-docker-compose up
+docker compose up
 
-# Production
-docker-compose -f docker-compose.prod.yml up
+# Production-style local/home-server run
+docker compose -f docker-compose.prod.yml up --build
 
-# Run tests
-pytest tests/
+# Backend tests without Docker
+uv run --with-requirements requirements.txt pytest tests
 ```
 
-## API Endpoints
-- `/auth/*` - Authentication (login, logout, token management)
-- `/users/*` - User CRUD operations
-- `/groups/*` - Group management
-- `/shifts/*` - Shift operations
-- `/protected/*` - Authenticated routes
+## Shift Data
 
-## Environment Variables
-- `DATABASE_URL` - SQLite database path
-- `NODE_ENV` - Environment mode
-- Jaeger tracing configuration
+Create production-shaped shifts from the YAML schedule:
 
-This is a purpose-built, time-limited application optimized for the specific needs of Open Flair festival volunteer coordination.
+```bash
+python scripts/create_production_shifts.py --token YOUR_ACCESS_TOKEN
+```
+
+The default schedule is stored in `scripts/festival_schedule.yaml`.
+
+## Known Limitations
+
+- Authorization is too permissive for public internet exposure.
+- No database migration system yet.
+- Generated plans are randomized and should be reviewed by the coordinator.
+- The 2026 shift times are still starter/demo data until confirmed by the coordinator.

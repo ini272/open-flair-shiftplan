@@ -1,11 +1,12 @@
 import requests
 import datetime
+import os
 
 # Configuration
 API_URL = "http://localhost:8000"
-TOKEN = "58482b6b-3e15-4fb1-bb54-3bb19e82f048"  # Replace with a valid admin token
-FESTIVAL_START = datetime.datetime(2025, 8, 6)
-FESTIVAL_END = datetime.datetime(2025, 8, 11)  # Day after festival ends
+TOKEN = os.getenv("OPEN_FLAIR_ACCESS_TOKEN")
+FESTIVAL_START = datetime.datetime(2026, 8, 5)
+FESTIVAL_END = datetime.datetime(2026, 8, 10)  # Day after festival ends
 LOCATIONS = ["Weinzelt", "Bierwagen"]
 SHIFT_TYPES = [
     {"start_hour": 8, "end_hour": 10},
@@ -19,6 +20,10 @@ SHIFT_TYPES = [
 ]
 
 # Login with token
+if not TOKEN:
+    print("Set OPEN_FLAIR_ACCESS_TOKEN to a valid access token before running this script.")
+    exit(1)
+
 session = requests.Session()
 response = session.get(f"{API_URL}/auth/login/{TOKEN}")
 if response.status_code != 200:

@@ -135,7 +135,7 @@ def delete_group(
         
         group_crud.remove(db=db, id=group_id)
 
-@router.post("/{group_id}/users/{user_id}", status_code=status.HTTP_200_OK)
+@router.post("/{group_id}/users/{user_id}", response_model=User, status_code=status.HTTP_200_OK)
 def add_user_to_group(
     group_id: int,
     user_id: int,
@@ -191,12 +191,14 @@ def add_user_to_group(
             span.add_event("assignment_failed")
             span.set_attribute("error", "Failed to add user to group")
             raise HTTPException(status_code=400, detail="Failed to add user to group")
+
+        db.refresh(user)
         
         span.add_event("user_assigned_successfully", {
             "user_id": user_id,
             "group_id": group_id
         })
-        return {"message": "User added to group successfully"}
+        return user
 
 @router.delete("/users/{user_id}", response_model=User)
 def remove_user_from_group(

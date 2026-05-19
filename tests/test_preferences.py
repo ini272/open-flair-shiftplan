@@ -182,7 +182,7 @@ def test_generate_shift_plan(authenticated_client):
     user_id2 = user_response2.json()["id"]
     
     # Create shifts for the festival period
-    festival_start = datetime(2025, 8, 6, 10, 0)
+    festival_start = datetime(2026, 8, 5, 10, 0)
     
     shift_response1 = authenticated_client.post(
         "/shifts/",

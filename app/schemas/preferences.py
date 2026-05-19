@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class PreferenceBase(BaseModel):
     """Base schema for shift preferences"""
@@ -12,5 +12,4 @@ class PreferenceCreate(PreferenceBase):
 
 class PreferenceResponse(PreferenceBase):
     """Schema for returning a preference"""
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

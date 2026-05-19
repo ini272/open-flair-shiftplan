@@ -36,7 +36,7 @@ export const translations = {
   shifts: {
     myShifts: 'Meine Schichten',
     availableShifts: 'Verfügbare Schichten',
-    coordinatorView: 'Koordinator Ansicht',
+    coordinatorView: 'Plan für die Koordination',
     shiftDetails: 'Schicht Details',
     capacity: 'Kapazität',
     description: 'Beschreibung',
@@ -68,12 +68,12 @@ export const translations = {
   // Festival
   festival: {
     name: 'Open Flair Festival',
-    year: '2025',
-    dates: '6. - 10. August 2025',
+    year: '2026',
+    dates: '5. - 9. August 2026',
     location: 'Eschwege, Deutschland',
-    timetable: 'Festival Zeitplan ansehen',
+    timetable: 'Festival Webseite ansehen',
     crewDashboard: 'Open Flair Festival Crew Dashboard',
-    shiftPlanner: 'Schichtplaner 2025'
+    shiftPlanner: 'Schichtplaner 2026'
   },
   
   // Account & Users
@@ -108,6 +108,7 @@ export const translations = {
     invalidToken: 'Ungültiger oder abgelaufener Token',
     checking: 'Wird überprüft...',
     tokenPlaceholder: 'Gib deinen Zugangs-Token ein',
+    tokenHelp: 'Den Token erhältst du von der Koordination.',
     loggingIn: 'Anmeldung läuft...',
     validatingToken: 'Token wird überprüft...'
   },
@@ -123,7 +124,7 @@ export const translations = {
   
   // Coordinator
   coordinator: {
-    dashboard: 'Koordinator Dashboard',
+    dashboard: 'Koordination',
     totalShifts: 'Schichten Gesamt',
     availableUsers: 'Verfügbare Benutzer',
     shiftCoverage: 'Schicht Abdeckung',
@@ -132,11 +133,46 @@ export const translations = {
     lastGenerated: 'Zuletzt generiert',
     clearExisting: 'Bestehende Zuweisungen löschen',
     useGroups: 'Gruppen-Zuweisungen verwenden',
-    generatePlan: 'Plan generieren',
+    generatePlan: 'Planvorschlag erstellen',
     generating: 'Generiere...',
     planGenerated: 'Plan wurde erfolgreich generiert',
     assignmentsGenerated: 'Zuweisungen erfolgreich generiert',
-    planGenerationFailed: 'Plan-Generierung fehlgeschlagen'
+    planGenerationFailed: 'Plan-Generierung fehlgeschlagen',
+    introTitle: 'Vorläufiger Schichtplan für Martina',
+    introText: 'Hier entsteht aus den Rückmeldungen der Crew ein erster Planvorschlag. Danach kannst du einzelne Schichten noch von Hand anpassen.',
+    resetPlan: 'Plan leeren',
+    maxShiftsPerUser: 'Max. Schichten pro Person',
+    viewModeLabel: 'Ansicht',
+    dayPlanView: 'Tagesplan',
+    personView: 'Personensicht',
+    choosePerson: 'Mitarbeitende auswählen',
+    choosePersonOrGroup: 'Person oder Team auswählen',
+    noPersonSelected: 'Wähle eine Person oder ein Team aus, um Verfügbarkeit und Zuteilung zu vergleichen.',
+    loadingPeople: 'Lade Personen und Teams...',
+    noMatchingPeople: 'Keine passenden Personen oder Teams gefunden.',
+    peopleLabel: 'Mitarbeitende',
+    teamsLabel: 'Teams',
+    assignedCountSuffix: 'Schichten',
+    noAssignmentsShort: 'Keine',
+    userAvailable: 'Verfügbar',
+    userOptedOut: 'Abgewählt',
+    userAssigned: 'Zugewiesen',
+    userAssignedVia: 'Über',
+    userAssignedDirectly: 'Direkt zugeteilt',
+    openShifts: 'Noch komplett offen',
+    partiallyFilled: 'Brauchen noch Leute',
+    assignmentsTotal: 'Eingeplante Einsätze',
+    allCovered: 'Aktuell sind alle Schichten mindestens voll besetzt.',
+    noPlanYet: 'Noch kein Planvorschlag vorhanden. Du kannst jetzt einen ersten Vorschlag erzeugen oder bestehende Zuweisungen neu laden.',
+    topIssues: 'Wichtig zuerst',
+    rosterTitle: 'Tagesplan',
+    rosterSubtitle: 'Papiernaher Überblick pro Tag, Uhrzeit und Standort.',
+    dayIntro: 'Zeitfenster und Standorte auf einen Blick.',
+    teamDrawerTitle: 'Mitarbeitende & Wünsche',
+    teamDrawerSubtitle: 'Hier siehst du, wer schon eingeteilt ist und welche Schichten einzelne Personen abgewählt haben.',
+    assignedShifts: 'Eingeteilte Schichten',
+    optOuts: 'Abgewählte Schichten',
+    noAssignmentsOrOptOuts: 'Keine Zuweisungen oder Abwahlen'
   },
   
   // Grid
@@ -148,8 +184,26 @@ export const translations = {
     empty: 'Leer',
     understaffed: 'Unterbesetzt',
     partial: 'Teilweise besetzt',
-    fullyStaffed: 'Vollständig besetzt',
+    fullyStaffed: 'Voll besetzt',
     overstaffed: 'Überbesetzt',
-    noShiftsAvailable: 'Keine Schichten verfügbar'
+    noShiftsAvailable: 'Keine Schichten verfügbar',
+    legend: 'Legende',
+    dayIssues: 'offene Baustellen',
+    everythingCovered: 'alles besetzt',
+    noShiftHere: 'An diesem Standort gibt es in diesem Zeitfenster keine Schicht.',
+    addPersonOrGroup: 'Person oder Gruppe',
+    addDialogTitle: 'Person oder Gruppe hinzufügen',
+    editDialogTitle: 'Schicht bearbeiten',
+    addDialogSearch: 'Nach Namen oder Gruppe suchen...',
+    loadingAvailable: 'Lade verfügbare Personen und Gruppen...',
+    availableGroups: 'Verfügbare Gruppen',
+    availableIndividuals: 'Verfügbare Einzelpersonen',
+    addGroups: 'Gruppe hinzufügen',
+    addIndividuals: 'Person hinzufügen',
+    editShift: 'Schicht bearbeiten',
+    currentAssignments: 'Aktuell eingeteilt',
+    directAssignment: 'Direkt eingeteilt',
+    noSearchResults: 'Keine passenden Ergebnisse gefunden.',
+    noAvailablePeople: 'Keine verfügbaren Personen oder Gruppen gefunden.'
   }
 };

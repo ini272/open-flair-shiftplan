@@ -205,7 +205,7 @@ def main():
         print(f"❌ Login failed: {response.text}")
         print("Make sure:")
         print(f"1. The FastAPI server is running on {args.api_url}")
-        print("2. The token is valid and has admin privileges")
+        print("2. The token is valid")
         sys.exit(1)
     
     print("✅ Logged in successfully")

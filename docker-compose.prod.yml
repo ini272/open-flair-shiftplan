@@ -5,15 +5,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./data:/app/data  # Persistent volume for database
     environment:
       - DATABASE_URL=sqlite:///./data/sql_app.db  # Database in persistent location
       - NODE_ENV=production
-    depends_on:
-      - jaeger
+    restart: unless-stopped
 
   frontend:
     build:
@@ -21,13 +20,6 @@ services:
       dockerfile: Dockerfile.prod
     ports:
       - "80:80"
-      - "443:443"  # Add HTTPS port
-    volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro  # Mount certificates read-only
     depends_on:
       - fastapi
-
-  jaeger:
-    image: jaegertracing/jaeger
-    ports:
-      - "16686:16686"
+    restart: unless-stopped

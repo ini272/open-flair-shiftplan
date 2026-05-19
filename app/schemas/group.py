@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.user import User
 
@@ -18,16 +18,14 @@ class GroupUpdate(GroupBase):
 
 class Group(GroupBase):
     """Schema for returning group data"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     is_active: bool
-    
-    class Config:
-        orm_mode = True
 
 class GroupWithUsers(Group):
     """Schema for returning group data with its users"""
+    model_config = ConfigDict(from_attributes=True)
+
     users: List[User] = []
-    
-    class Config:
-        orm_mode = True

@@ -93,7 +93,7 @@ const DashboardPage = () => {
         // Get user data
         const userId = localStorage.getItem('user_id');
         if (!userId) {
-          navigate('/setup');
+          navigate('/access');
           return;
         }
 
@@ -475,39 +475,6 @@ const DashboardPage = () => {
         </Button>
       </Box>
 
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h5" gutterBottom>
-          {translations.account.welcome}, {user?.username || 'Crew Member'}!
-        </Typography>
-        {user?.group_id && userGroup && (
-          <Box>
-            <Typography variant="body1" sx={{ mb: 2 }}>
-              <strong>Team:</strong> {userGroup.name}
-            </Typography>
-            {userGroup.users && userGroup.users.length > 1 && (
-              <Box>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Teammitglieder:
-                </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap">
-                  {userGroup.users
-                    .map(member => (
-                      <Chip
-                        key={member.id}
-                        icon={<PersonIcon />}
-                        label={member.id === user.id ? `${member.username} (Du)` : member.username}
-                        size="small"
-                        variant={member.id === user.id ? "filled" : "outlined"}
-                        color={member.id === user.id ? "primary" : "secondary"}
-                      />
-                    ))}
-                </Stack>
-              </Box>
-            )}
-          </Box>
-        )}
-      </Paper>
-
       {/* Tab Navigation */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={currentTab} onChange={handleTabChange}>
@@ -528,7 +495,7 @@ const DashboardPage = () => {
                 {translations.shifts.myShifts} - {translations.festival.name} {translations.festival.year}
               </Typography>
               <Link
-                href="https://www.open-flair.de/2025/timetable"
+                href="https://www.open-flair.de/2026"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{ 
@@ -618,62 +585,6 @@ const DashboardPage = () => {
       </Snackbar>
     </Container>
   );
-};
-
-// Add this function with the other handlers:
-const handleBatchToggle = async (shiftsToToggle, shouldSelect) => {
-  if (!shiftsToToggle || shiftsToToggle.length === 0) return;
-  
-  // Set pending state for all shifts
-  const newPending = {};
-  shiftsToToggle.forEach(shift => {
-    newPending[shift.id] = true;
-  });
-  setPendingOperations(prev => ({ ...prev, ...newPending }));
-  
-  try {
-    // Process shifts in batches to avoid overwhelming the API
-    const batchSize = 5;
-    for (let i = 0; i < shiftsToToggle.length; i += batchSize) {
-      const batch = shiftsToToggle.slice(i, i + batchSize);
-      const promises = batch.map(shift => {
-        const isCurrentlySelected = availableShiftIds.includes(shift.id);
-        
-        if (shouldSelect && !isCurrentlySelected) {
-          // Opt in to shift
-          return preferenceService.setPreference({
-            user_id: user.id,
-            shift_id: shift.id,
-            can_work: true
-          });
-        } else if (!shouldSelect && isCurrentlySelected) {
-          // Opt out of shift
-          return preferenceService.setPreference({
-            user_id: user.id,
-            shift_id: shift.id,
-            can_work: false
-          });
-        }
-        return Promise.resolve(); // No change needed
-      });
-      
-      await Promise.all(promises);
-    }
-    
-    // Refresh data
-    await loadUserPreferences();
-    
-  } catch (error) {
-    console.error('Error in batch toggle:', error);
-    setError('Failed to update preferences');
-  } finally {
-    // Clear pending state
-    const clearedPending = {};
-    shiftsToToggle.forEach(shift => {
-      clearedPending[shift.id] = undefined;
-    });
-    setPendingOperations(prev => ({ ...prev, ...clearedPending }));
-  }
 };
 
 export default DashboardPage;
