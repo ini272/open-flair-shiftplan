@@ -73,7 +73,7 @@ export const translations = {
     location: 'Eschwege, Deutschland',
     timetable: 'Festival Webseite ansehen',
     crewDashboard: 'Open Flair Festival Crew Dashboard',
-    shiftPlanner: 'Schichtplaner 2026'
+    shiftPlanner: 'Schichtplan Open Flair 2026'
   },
   
   // Account & Users
@@ -201,6 +201,8 @@ export const translations = {
     addGroups: 'Gruppe hinzufügen',
     addIndividuals: 'Person hinzufügen',
     editShift: 'Schicht bearbeiten',
+    printActiveDay: 'Diesen Tag drucken',
+    printTimestampLabel: 'Stand',
     currentAssignments: 'Aktuell eingeteilt',
     directAssignment: 'Direkt eingeteilt',
     noSearchResults: 'Keine passenden Ergebnisse gefunden.',

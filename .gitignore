@@ -1,3 +1,6 @@
+# Playwright
+.playwright-cli/
+
 # Python bytecode
 __pycache__/
 *.py[cod]

@@ -22,7 +22,7 @@ import { translations } from '../utils/translations';
 const ShiftStateCard = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isAvailable' && prop !== 'isAssigned',
 })(({ theme, isAvailable, isAssigned }) => ({
-  padding: theme.spacing(1.1, 1.25),
+  padding: theme.spacing(0.95, 1.05),
   borderRadius: theme.shape.borderRadius,
   backgroundColor: isAvailable ? theme.palette.success.light : theme.palette.error.light,
   color: isAvailable ? theme.palette.success.contrastText : theme.palette.error.contrastText,
@@ -35,8 +35,8 @@ const ShiftStateCard = styled(Box, {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  minHeight: 44,
-  gap: theme.spacing(1),
+  minHeight: 42,
+  gap: theme.spacing(0.75),
   fontWeight: 500,
 }));
 
@@ -61,6 +61,34 @@ const formatDate = (dateStr) => {
 const getSortMinutes = (timeStr) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
   return (hours < 6 ? hours + 24 : hours) * 60 + minutes;
+};
+
+const getShiftLocationOrder = (title) => {
+  const normalizedTitle = title.toLowerCase();
+
+  if (normalizedTitle.includes('wein')) {
+    return 0;
+  }
+
+  if (normalizedTitle.includes('bier')) {
+    return 1;
+  }
+
+  return 2;
+};
+
+const getCompactShiftLabel = (title) => {
+  const normalizedTitle = title.toLowerCase();
+
+  if (normalizedTitle.includes('weinzelt')) {
+    return 'WZ';
+  }
+
+  if (normalizedTitle.includes('bierwagen')) {
+    return 'BW';
+  }
+
+  return title;
 };
 
 const CoordinatorPersonView = ({
@@ -196,11 +224,20 @@ const CoordinatorPersonView = ({
                 {timeSlot}
               </TableCell>
               {days.map((day) => {
-                const dayShifts = shiftsByDayAndTime[`${day}-${timeSlot}`] || [];
+                const dayShifts = [...(shiftsByDayAndTime[`${day}-${timeSlot}`] || [])]
+                  .sort((a, b) => getShiftLocationOrder(a.title) - getShiftLocationOrder(b.title));
 
                 return (
                   <TableCell key={`${day}-${timeSlot}`} sx={{ p: 1 }}>
-                    <Stack spacing={1}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: dayShifts.length > 1
+                          ? 'repeat(2, minmax(0, 1fr))'
+                          : 'minmax(0, 1fr)',
+                        gap: 1,
+                      }}
+                    >
                       {dayShifts.map((shift) => {
                         const assignment = assignmentMap.get(shift.id);
                         const isAvailable = !optedOutShiftIds.has(shift.id);
@@ -211,9 +248,10 @@ const CoordinatorPersonView = ({
                           : (isAvailable
                             ? translations.coordinator.userAvailable
                             : translations.coordinator.userOptedOut);
+                        const tooltipTitle = `${shift.title} • ${assignmentTitle}`;
 
                         return (
-                          <Tooltip key={shift.id} title={assignmentTitle}>
+                          <Tooltip key={shift.id} title={tooltipTitle}>
                             <ShiftStateCard
                               isAvailable={isAvailable}
                               isAssigned={Boolean(assignment)}
@@ -226,9 +264,10 @@ const CoordinatorPersonView = ({
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
                                   fontWeight: 600,
+                                  fontSize: '0.84rem',
                                 }}
                               >
-                                {shift.title}
+                                {getCompactShiftLabel(shift.title)}
                               </Typography>
 
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
@@ -244,7 +283,7 @@ const CoordinatorPersonView = ({
                           </Tooltip>
                         );
                       })}
-                    </Stack>
+                    </Box>
                   </TableCell>
                 );
               })}

@@ -12,8 +12,7 @@ import { translations } from '../utils/translations';
 const ShiftCell = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isPending' && prop !== 'selected'
 })(({ theme, selected, isPending }) => ({
-  padding: theme.spacing(1.5),
-  margin: theme.spacing(0.5),
+  padding: theme.spacing(1, 1.1),
   borderRadius: theme.shape.borderRadius,
   backgroundColor: selected ? theme.palette.success.light : theme.palette.error.light,
   color: selected ? theme.palette.success.contrastText : theme.palette.error.contrastText,
@@ -31,8 +30,9 @@ const ShiftCell = styled(Box, {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  minHeight: '40px',
+  minHeight: '46px',
   fontWeight: 500,
+  gap: theme.spacing(0.75),
   // More pronounced visual feedback for pending operations
   opacity: isPending ? 0.8 : 1,
   position: 'relative',
@@ -63,6 +63,34 @@ function formatDate(dateStr) {
     month: 'short',
     day: 'numeric'
   });
+}
+
+function getShiftLocationOrder(title) {
+  const normalizedTitle = title.toLowerCase();
+
+  if (normalizedTitle.includes('wein')) {
+    return 0;
+  }
+
+  if (normalizedTitle.includes('bier')) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function getCompactShiftLabel(title) {
+  const normalizedTitle = title.toLowerCase();
+
+  if (normalizedTitle.includes('weinzelt')) {
+    return 'WZ';
+  }
+
+  if (normalizedTitle.includes('bierwagen')) {
+    return 'BW';
+  }
+
+  return title;
 }
 
 const ShiftGrid = ({ 
@@ -190,6 +218,12 @@ const ShiftGrid = ({
     onBatchDayToggle(dayShifts, shouldSelect);
   }, [shiftsByDay, getDaySelectionStatus, onBatchDayToggle]);
 
+  const sortShiftsByLocation = useCallback((cellShifts) => {
+    return [...cellShifts].sort((a, b) => (
+      getShiftLocationOrder(a.title) - getShiftLocationOrder(b.title)
+    ));
+  }, []);
+
   return (
     <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
       <Table sx={{ minWidth: 650 }}>
@@ -240,11 +274,21 @@ const ShiftGrid = ({
               <TableCell sx={{ backgroundColor: '#fafafa' }}>{timeSlot}</TableCell>
               {days.map(day => {
                 const cellShifts = findShifts(day, timeSlot);
+                const orderedShifts = sortShiftsByLocation(cellShifts);
                 
                 return (
                   <TableCell key={`${day}-${timeSlot}`} align="center" sx={{ padding: 1 }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {cellShifts.map(shift => {
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: orderedShifts.length > 1
+                          ? 'repeat(2, minmax(0, 1fr))'
+                          : 'minmax(0, 1fr)',
+                        gap: 1,
+                        alignItems: 'stretch'
+                      }}
+                    >
+                      {orderedShifts.map(shift => {
                         const available = isAvailable(shift.id);
                         const isPending = isShiftPending(shift.id);
                         
@@ -255,7 +299,19 @@ const ShiftGrid = ({
                             isPending={isPending}
                             onClick={() => handleShiftClick(shift.id)}
                           >
-                            <span>{shift.title}</span>
+                            <Box
+                              component="span"
+                              sx={{
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                fontSize: '0.86rem',
+                                fontWeight: 600
+                              }}
+                            >
+                              {getCompactShiftLabel(shift.title)}
+                            </Box>
                             {isPending ? (
                               <CircularProgress 
                                 size={16} 

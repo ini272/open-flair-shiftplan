@@ -348,18 +348,22 @@ const CoordinatorView = ({ shifts, users }) => {
                 ? translations.coordinator.loadingPeople
                 : translations.coordinator.noMatchingPeople}
               sx={{ minWidth: { xs: '100%', md: 320 } }}
-              renderOption={(props, option) => (
-                <Box component="li" {...props}>
-                  <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Typography variant="body2">{option.label}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {option.shiftCount > 0
-                        ? `${option.shiftCount} ${translations.coordinator.assignedCountSuffix}`
-                        : translations.coordinator.noAssignmentsShort}
-                    </Typography>
-                  </Stack>
-                </Box>
-              )}
+              renderOption={(props, option) => {
+                const { key, ...optionProps } = props;
+
+                return (
+                  <Box component="li" key={key} {...optionProps}>
+                    <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', width: '100%' }}>
+                      <Typography variant="body2">{option.label}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {option.shiftCount > 0
+                          ? `${option.shiftCount} ${translations.coordinator.assignedCountSuffix}`
+                          : translations.coordinator.noAssignmentsShort}
+                      </Typography>
+                    </Stack>
+                  </Box>
+                );
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}

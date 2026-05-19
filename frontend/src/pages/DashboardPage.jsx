@@ -460,23 +460,17 @@ const DashboardPage = () => {
   }
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ mt: 4, mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {/* Logo + Title */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Logo size="large" />
-          <Typography variant="h4" component="h1">
-            {translations.festival.crewDashboard}
-          </Typography>
-        </Box>
-        
-        <Button variant="outlined" onClick={handleLogout}>
+    <Container maxWidth="lg" sx={{ py: { xs: 2.5, md: 3 } }}>
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Logo size="header" />
+
+        <Button variant="outlined" size="small" onClick={handleLogout}>
           {translations.logout}
         </Button>
       </Box>
 
       {/* Tab Navigation */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2.5 }}>
         <Tabs value={currentTab} onChange={handleTabChange}>
           <Tab label={translations.shifts.myShifts} />
           {isCoordinator && (

@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  GlobalStyles,
   InputAdornment,
   IconButton,
   List,
@@ -30,6 +31,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
+import PrintIcon from '@mui/icons-material/Print';
 import { groupService, shiftService } from '../services/api';
 import { translations } from '../utils/translations';
 
@@ -60,6 +62,14 @@ const PlannerHeaderCell = styled(Box)(({ theme }) => ({
   borderRight: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.grey[100],
   fontWeight: 700,
+  '@media print': {
+    padding: theme.spacing(1.1, 1.5),
+    borderColor: '#000000',
+    backgroundColor: '#f2f2f2',
+    color: '#000000',
+    WebkitPrintColorAdjust: 'exact',
+    printColorAdjust: 'exact',
+  },
 }));
 
 const LocationHeaderCell = styled(Box, {
@@ -71,6 +81,13 @@ const LocationHeaderCell = styled(Box, {
   backgroundColor: surfaceColor,
   color: accentColor,
   fontWeight: 700,
+  '@media print': {
+    padding: theme.spacing(1.1, 1.5),
+    borderColor: '#000000',
+    color: '#000000',
+    WebkitPrintColorAdjust: 'exact',
+    printColorAdjust: 'exact',
+  },
 }));
 
 const TimeCell = styled(Box)(({ theme }) => ({
@@ -79,6 +96,15 @@ const TimeCell = styled(Box)(({ theme }) => ({
   borderRight: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.grey[50],
   minHeight: 124,
+  '@media print': {
+    padding: theme.spacing(1, 1.4),
+    minHeight: 100,
+    borderColor: '#000000',
+    backgroundColor: '#fafafa',
+    color: '#000000',
+    WebkitPrintColorAdjust: 'exact',
+    printColorAdjust: 'exact',
+  },
 }));
 
 const ShiftCell = styled(Box, {
@@ -109,6 +135,18 @@ const ShiftCell = styled(Box, {
       width: 4,
       backgroundColor: accentColor,
     },
+    '@media print': {
+      minHeight: 100,
+      padding: theme.spacing(0.9, 1),
+      borderColor: '#000000',
+      backgroundColor: '#ffffff',
+      color: '#000000',
+      WebkitPrintColorAdjust: 'exact',
+      printColorAdjust: 'exact',
+      '&::before': {
+        width: 0,
+      },
+    },
   };
 });
 
@@ -116,6 +154,9 @@ const CompactAssignmentsGrid = styled(Box)(({ theme }) => ({
   display: 'grid',
   gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
   gap: theme.spacing(0.75),
+  '@media print': {
+    gap: theme.spacing(0.5),
+  },
 }));
 
 const CompactNameTag = styled(Box, {
@@ -134,6 +175,15 @@ const CompactNameTag = styled(Box, {
     ? alpha(theme.palette.secondary.main, 0.12)
     : theme.palette.background.paper,
   overflow: 'hidden',
+  '@media print': {
+    minHeight: 24,
+    padding: theme.spacing(0.35, 0.55),
+    borderColor: '#000000',
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    WebkitPrintColorAdjust: 'exact',
+    printColorAdjust: 'exact',
+  },
 }));
 
 const DialogAssignmentRow = styled(Box)(({ theme }) => ({
@@ -162,6 +212,31 @@ const formatDayTabLabel = (dateStr) => {
     weekday: 'short',
     day: 'numeric',
     month: 'short'
+  });
+};
+
+const formatPrintDayLabel = (dateStr) => {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('de-DE', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+const formatPrintTimestamp = (date) => {
+  if (!date) {
+    return '';
+  }
+
+  return date.toLocaleString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   });
 };
 
@@ -300,6 +375,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedDayKey, setSelectedDayKey] = useState('');
+  const [printTimestamp, setPrintTimestamp] = useState(null);
 
   const shiftsWithAssignments = useMemo(() => {
     if (!generatedAssignments) {
@@ -435,6 +511,20 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
     return dayPlans.find((dayPlan) => dayPlan.dayKey === resolvedDayKey) || dayPlans[0];
   }, [dayPlans, resolvedDayKey]);
 
+  const handlePrintActiveDay = () => {
+    if (typeof window === 'undefined' || !activeDayPlan) {
+      return;
+    }
+
+    setPrintTimestamp(new Date());
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
+
   const handleOpenAddUserDialog = async (shift) => {
     setSelectedShift(shift);
     setLoading(true);
@@ -568,185 +658,284 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
     );
   }
 
+  const activePrintTimestamp = printTimestamp || new Date();
+
+  const planGrid = activeDayPlan ? (
+    <Box sx={{ overflowX: 'auto', '@media print': { overflow: 'visible' } }}>
+      <Box
+        sx={{
+          minWidth: Math.max(840, 180 + locationColumns.length * 320),
+          display: 'grid',
+          gridTemplateColumns: `180px repeat(${locationColumns.length}, minmax(320px, 1fr))`,
+          '@media print': {
+            minWidth: 0,
+            width: '100%',
+            gridTemplateColumns: `160px repeat(${locationColumns.length}, minmax(0, 1fr))`,
+          },
+        }}
+      >
+        <PlannerHeaderCell>
+          <Typography variant="subtitle2">{translations.grid.time}</Typography>
+        </PlannerHeaderCell>
+        {locationColumns.map((location) => (
+          <LocationHeaderCell
+            key={location.key}
+            accentColor={location.accent}
+            surfaceColor={location.surface}
+          >
+            <Typography variant="subtitle2">{location.label}</Typography>
+          </LocationHeaderCell>
+        ))}
+
+        {activeDayPlan.slots.map((slot) => (
+          <React.Fragment key={slot.key}>
+            <TimeCell>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, '@media print': { fontSize: '0.95rem' } }}>
+                {slot.timeLabel}
+              </Typography>
+            </TimeCell>
+
+            {locationColumns.map((location) => {
+              const shift = slot.locations[location.key];
+
+              if (!shift) {
+                return (
+                  <ShiftCell
+                    key={`${slot.key}-${location.key}`}
+                    staffingLevel="none"
+                    accentColor={location.accent}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      {translations.grid.noShiftHere}
+                    </Typography>
+                  </ShiftCell>
+                );
+              }
+
+              const staffingLevel = getStaffingLevel(shift);
+              const currentStaff = getCurrentStaff(shift);
+
+              return (
+                <ShiftCell
+                  key={shift.id}
+                  staffingLevel={staffingLevel}
+                  accentColor={location.accent}
+                >
+                  <Stack spacing={1} sx={{ '@media print': { gap: 0.6 } }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                        {currentStaff}/{shift.capacity || '∞'} {translations.shifts.capacity.toLowerCase()}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Chip
+                          size="small"
+                          color={getStatusColor(staffingLevel)}
+                          label={getStatusLabel(shift)}
+                          sx={{
+                            height: 24,
+                            '@media print': {
+                              height: 20,
+                              fontSize: '0.72rem',
+                              border: '1px solid #000000',
+                              backgroundColor: '#ffffff',
+                              color: '#000000',
+                            },
+                          }}
+                        />
+                        <Tooltip title={translations.grid.editShift}>
+                          <IconButton
+                            className="coordinator-print-hidden"
+                            size="small"
+                            color="primary"
+                            onClick={() => handleOpenAddUserDialog(shift)}
+                            aria-label={translations.grid.editShift}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+
+                    {currentStaff > 0 ? (
+                      <CompactAssignmentsGrid>
+                        {getShiftPreviewEntries(shift).map((entry) => (
+                          <Tooltip
+                            key={entry.key}
+                            title={entry.helper}
+                            enterDelay={300}
+                          >
+                            <CompactNameTag assignmentTone={entry.assignmentTone}>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontSize: '0.82rem',
+                                  lineHeight: 1.2,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  fontWeight: entry.assignmentTone === 'group' ? 700 : 500,
+                                  '@media print': {
+                                    fontSize: '0.74rem',
+                                  },
+                                }}
+                              >
+                                {entry.label}
+                              </Typography>
+                            </CompactNameTag>
+                          </Tooltip>
+                        ))}
+                      </CompactAssignmentsGrid>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                        {translations.grid.noAssignments}
+                      </Typography>
+                    )}
+                  </Stack>
+                </ShiftCell>
+              );
+            })}
+          </React.Fragment>
+        ))}
+      </Box>
+    </Box>
+  ) : null;
+
   return (
     <Box>
+      <GlobalStyles
+        styles={{
+          '@page': {
+            size: 'A4 landscape',
+            margin: '10mm',
+          },
+          '@media print': {
+            'html, body': {
+              backgroundColor: '#ffffff',
+            },
+            'body *': {
+              visibility: 'hidden',
+            },
+            '.coordinator-print-shell, .coordinator-print-shell *': {
+              visibility: 'visible',
+            },
+            '.coordinator-print-shell': {
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '100%',
+              backgroundColor: '#ffffff',
+            },
+            '.coordinator-print-hidden': {
+              display: 'none !important',
+            },
+          },
+        }}
+      />
       <Paper sx={{ mb: 2, borderRadius: 2.5, overflow: 'hidden' }}>
-        <Box sx={{ px: 1.5, py: 1.5, borderBottom: 1, borderColor: 'divider', backgroundColor: 'grey.50' }}>
-          <ToggleButtonGroup
-            exclusive
-            value={resolvedDayKey || null}
-            onChange={(_, value) => {
-              if (value) {
-                setSelectedDayKey(value);
-              }
-            }}
-            sx={(theme) => ({
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 1,
-              '& .MuiToggleButtonGroup-grouped': {
-                margin: 0,
-                borderRadius: theme.spacing(1.5),
-                border: `1px solid ${theme.palette.divider} !important`,
-              },
-            })}
+        <Box
+          className="coordinator-print-hidden"
+          sx={{
+            px: 1.5,
+            py: 1.5,
+            borderBottom: 1,
+            borderColor: 'divider',
+            backgroundColor: 'grey.50',
+          }}
+        >
+          <Stack
+            direction={{ xs: 'column', lg: 'row' }}
+            spacing={1.5}
+            sx={{ alignItems: { lg: 'center' }, justifyContent: 'space-between' }}
           >
-          {dayPlans.map((dayPlan) => {
-            const issueCount = getDayIssueCount(dayPlan, locationColumns);
+            <ToggleButtonGroup
+              exclusive
+              value={resolvedDayKey || null}
+              onChange={(_, value) => {
+                if (value) {
+                  setSelectedDayKey(value);
+                }
+              }}
+              sx={(theme) => ({
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1,
+                '& .MuiToggleButtonGroup-grouped': {
+                  margin: 0,
+                  borderRadius: theme.spacing(1.5),
+                  border: `1px solid ${theme.palette.divider} !important`,
+                },
+              })}
+            >
+              {dayPlans.map((dayPlan) => {
+                const issueCount = getDayIssueCount(dayPlan, locationColumns);
 
-            return (
-              <ToggleButton
-                key={dayPlan.dayKey}
-                value={dayPlan.dayKey}
-                sx={{
-                  alignItems: 'flex-start',
-                  textAlign: 'left',
-                  textTransform: 'none',
-                  px: 1.5,
-                  py: 0.9,
-                  minWidth: 136,
-                }}
-              >
-                <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {formatDayTabLabel(dayPlan.dayDate)}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    color={issueCount > 0 ? 'error.main' : 'text.secondary'}
-                    sx={{ whiteSpace: 'nowrap', fontWeight: issueCount > 0 ? 700 : 500 }}
+                return (
+                  <ToggleButton
+                    key={dayPlan.dayKey}
+                    value={dayPlan.dayKey}
+                    sx={{
+                      alignItems: 'flex-start',
+                      textAlign: 'left',
+                      textTransform: 'none',
+                      px: 1.5,
+                      py: 0.9,
+                      minWidth: 136,
+                    }}
                   >
-                    {issueCount > 0 ? `${issueCount} offen` : translations.grid.everythingCovered}
-                  </Typography>
-                </Box>
-              </ToggleButton>
-            );
-          })}
-          </ToggleButtonGroup>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {formatDayTabLabel(dayPlan.dayDate)}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color={issueCount > 0 ? 'error.main' : 'text.secondary'}
+                        sx={{ whiteSpace: 'nowrap', fontWeight: issueCount > 0 ? 700 : 500 }}
+                      >
+                        {issueCount > 0 ? `${issueCount} offen` : translations.grid.everythingCovered}
+                      </Typography>
+                    </Box>
+                  </ToggleButton>
+                );
+              })}
+            </ToggleButtonGroup>
+
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<PrintIcon />}
+              onClick={handlePrintActiveDay}
+              disabled={!activeDayPlan}
+              sx={{ alignSelf: { xs: 'stretch', lg: 'center' }, whiteSpace: 'nowrap' }}
+            >
+              {translations.grid.printActiveDay}
+            </Button>
+          </Stack>
         </Box>
 
         {activeDayPlan && (
-          <>
-            <Box sx={{ overflowX: 'auto' }}>
-              <Box
-                sx={{
-                  minWidth: Math.max(840, 180 + locationColumns.length * 320),
-                  display: 'grid',
-                  gridTemplateColumns: `180px repeat(${locationColumns.length}, minmax(320px, 1fr))`
-                }}
-              >
-                <PlannerHeaderCell>
-                  <Typography variant="subtitle2">{translations.grid.time}</Typography>
-                </PlannerHeaderCell>
-                {locationColumns.map((location) => (
-                  <LocationHeaderCell
-                    key={location.key}
-                    accentColor={location.accent}
-                    surfaceColor={location.surface}
-                  >
-                    <Typography variant="subtitle2">{location.label}</Typography>
-                  </LocationHeaderCell>
-                ))}
-
-                {activeDayPlan.slots.map((slot) => (
-                  <React.Fragment key={slot.key}>
-                    <TimeCell>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        {slot.timeLabel}
-                      </Typography>
-                    </TimeCell>
-
-                    {locationColumns.map((location) => {
-                      const shift = slot.locations[location.key];
-
-                      if (!shift) {
-                        return (
-                          <ShiftCell
-                            key={`${slot.key}-${location.key}`}
-                            staffingLevel="none"
-                            accentColor={location.accent}
-                          >
-                            <Typography variant="body2" color="text.secondary">
-                              {translations.grid.noShiftHere}
-                            </Typography>
-                          </ShiftCell>
-                        );
-                      }
-
-                      const staffingLevel = getStaffingLevel(shift);
-                      const currentStaff = getCurrentStaff(shift);
-
-                      return (
-                        <ShiftCell
-                          key={shift.id}
-                          staffingLevel={staffingLevel}
-                          accentColor={location.accent}
-                        >
-                          <Stack spacing={1}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                                {currentStaff}/{shift.capacity || '∞'} {translations.shifts.capacity.toLowerCase()}
-                              </Typography>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                                <Chip
-                                  size="small"
-                                  color={getStatusColor(staffingLevel)}
-                                  label={getStatusLabel(shift)}
-                                  sx={{ height: 24 }}
-                                />
-                                <Tooltip title={translations.grid.editShift}>
-                                  <IconButton
-                                    size="small"
-                                    color="primary"
-                                    onClick={() => handleOpenAddUserDialog(shift)}
-                                    aria-label={translations.grid.editShift}
-                                  >
-                                    <AddIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-                            </Box>
-
-                            {currentStaff > 0 ? (
-                              <CompactAssignmentsGrid>
-                                {getShiftPreviewEntries(shift).map((entry) => (
-                                  <Tooltip
-                                    key={entry.key}
-                                    title={entry.helper}
-                                    enterDelay={300}
-                                  >
-                                    <CompactNameTag assignmentTone={entry.assignmentTone}>
-                                      <Typography
-                                        variant="body2"
-                                        sx={{
-                                          fontSize: '0.82rem',
-                                          lineHeight: 1.2,
-                                          whiteSpace: 'nowrap',
-                                          overflow: 'hidden',
-                                          textOverflow: 'ellipsis',
-                                          fontWeight: entry.assignmentTone === 'group' ? 700 : 500,
-                                        }}
-                                      >
-                                        {entry.label}
-                                      </Typography>
-                                    </CompactNameTag>
-                                  </Tooltip>
-                                ))}
-                              </CompactAssignmentsGrid>
-                            ) : (
-                              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                                {translations.grid.noAssignments}
-                              </Typography>
-                            )}
-                          </Stack>
-                        </ShiftCell>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
-              </Box>
+          <Box className="coordinator-print-shell">
+            <Box
+              sx={{
+                display: 'none',
+                '@media print': {
+                  display: 'block',
+                  px: 0.5,
+                  pb: 1.5,
+                },
+              }}
+            >
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#000000' }}>
+                {translations.festival.shiftPlanner}
+              </Typography>
+              <Typography variant="subtitle1" sx={{ color: '#000000' }}>
+                {formatPrintDayLabel(activeDayPlan.dayDate)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#000000' }}>
+                {translations.grid.printTimestampLabel}: {formatPrintTimestamp(activePrintTimestamp)}
+              </Typography>
             </Box>
-          </>
+            {planGrid}
+          </Box>
         )}
       </Paper>
 
