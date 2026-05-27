@@ -367,6 +367,27 @@ const getShiftPreviewEntries = (shift) => {
   return [...groupEntries, ...userEntries];
 };
 
+const getPrintEntryColumns = (entries) => {
+  const columns = [[], [], []];
+
+  entries.slice(0, 6).forEach((entry, index) => {
+    const columnIndex = index % 3;
+    columns[columnIndex].push(entry);
+  });
+
+  return columns.map((columnEntries) => {
+    if (columnEntries.length === 0) {
+      return [null, null];
+    }
+
+    if (columnEntries.length === 1) {
+      return [columnEntries[0], null];
+    }
+
+    return columnEntries.slice(0, 2);
+  });
+};
+
 const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChange }) => {
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState(null);
@@ -660,7 +681,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
 
   const activePrintTimestamp = printTimestamp || new Date();
 
-  const planGrid = activeDayPlan ? (
+  const screenPlanGrid = activeDayPlan ? (
     <Box sx={{ overflowX: 'auto', '@media print': { overflow: 'visible' } }}>
       <Box
         sx={{
@@ -800,13 +821,191 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
     </Box>
   ) : null;
 
+  const printPlanGrid = activeDayPlan ? (
+    <Box
+      className="coordinator-print-only"
+      sx={{
+        display: 'none',
+        '@media print': {
+          display: 'block',
+        },
+      }}
+    >
+      <Box sx={{ mb: 1.25 }}>
+        <Typography
+          variant="subtitle1"
+          sx={{
+            color: '#000000',
+            fontWeight: 700,
+            fontSize: '0.98rem',
+            lineHeight: 1.2,
+          }}
+        >
+          {formatPrintDayLabel(activeDayPlan.dayDate)} • {translations.grid.printTimestampLabel}: {formatPrintTimestamp(activePrintTimestamp)}
+        </Typography>
+      </Box>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${locationColumns.length}, minmax(0, 1fr))`,
+          gap: '2.5mm',
+        }}
+      >
+        {locationColumns.map((location) => (
+          <Box
+            key={`print-${location.key}`}
+            sx={{
+              border: '1px solid #000000',
+              color: '#000000',
+              backgroundColor: '#ffffff',
+              breakInside: 'avoid',
+            }}
+          >
+            <Box
+              sx={{
+                px: 1,
+                py: 0.7,
+                borderBottom: '1px solid #000000',
+                backgroundColor: location.surface,
+                color: '#000000',
+                textAlign: 'center',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                lineHeight: 1.15,
+                WebkitPrintColorAdjust: 'exact',
+                printColorAdjust: 'exact',
+              }}
+            >
+              {location.label}
+            </Box>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '20mm repeat(3, minmax(0, 1fr)) 10mm',
+                borderBottom: '1px solid #000000',
+                backgroundColor: '#f7f7f7',
+                color: '#000000',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                lineHeight: 1.15,
+                WebkitPrintColorAdjust: 'exact',
+                printColorAdjust: 'exact',
+              }}
+            >
+              <Box sx={{ px: 0.7, py: 0.45, borderRight: '1px solid #000000' }}>
+                {translations.grid.time}
+              </Box>
+              <Box sx={{ px: 0.7, py: 0.45, gridColumn: 'span 3', borderRight: '1px solid #000000' }}>
+                {translations.grid.namesColumn}
+              </Box>
+              <Box sx={{ px: 0.5, py: 0.45, textAlign: 'center' }}>
+                {translations.grid.peopleShort}
+              </Box>
+            </Box>
+
+            {activeDayPlan.slots.map((slot) => {
+              const shift = slot.locations[location.key];
+              const printColumns = getPrintEntryColumns(shift ? getShiftPreviewEntries(shift) : []);
+
+              return (
+                <Box
+                  key={`print-row-${location.key}-${slot.key}`}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '20mm repeat(3, minmax(0, 1fr)) 10mm',
+                    borderBottom: '1px solid #000000',
+                    '&:last-of-type': {
+                      borderBottom: 'none',
+                    },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      px: 0.7,
+                      py: 0.55,
+                      borderRight: '1px solid #000000',
+                      minHeight: '19mm',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      lineHeight: 1.15,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {slot.timeLabel}
+                  </Box>
+
+                  {printColumns.map((columnEntries, columnIndex) => (
+                    <Box
+                      key={`print-col-${location.key}-${slot.key}-${columnIndex}`}
+                      sx={{
+                        px: 0.55,
+                        py: 0.35,
+                        borderRight: '1px solid #000000',
+                        minHeight: '19mm',
+                        display: 'grid',
+                        gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
+                        alignItems: 'center',
+                        gap: 0.15,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {columnEntries.map((entry, rowIndex) => (
+                        <Typography
+                          key={entry ? entry.key : `empty-${location.key}-${slot.key}-${columnIndex}-${rowIndex}`}
+                          variant="body2"
+                          sx={{
+                            fontSize: '0.72rem',
+                            lineHeight: 1.08,
+                            fontWeight: 500,
+                            color: '#000000',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            minHeight: '6.1mm',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          {entry?.label || ''}
+                        </Typography>
+                      ))}
+                    </Box>
+                  ))}
+
+                  <Box
+                    sx={{
+                      px: 0.35,
+                      py: 0.35,
+                      minHeight: '19mm',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: '#000000',
+                    }}
+                  >
+                    {shift?.capacity || ''}
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  ) : null;
+
   return (
     <Box>
       <GlobalStyles
         styles={{
           '@page': {
             size: 'A4 landscape',
-            margin: '10mm',
+            margin: '6mm',
           },
           '@media print': {
             'html, body': {
@@ -827,6 +1026,12 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
             },
             '.coordinator-print-hidden': {
               display: 'none !important',
+            },
+            '.coordinator-screen-plan': {
+              display: 'none !important',
+            },
+            '.coordinator-print-only': {
+              display: 'block !important',
             },
           },
         }}
@@ -914,27 +1119,10 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
 
         {activeDayPlan && (
           <Box className="coordinator-print-shell">
-            <Box
-              sx={{
-                display: 'none',
-                '@media print': {
-                  display: 'block',
-                  px: 0.5,
-                  pb: 1.5,
-                },
-              }}
-            >
-              <Typography variant="h5" sx={{ fontWeight: 700, color: '#000000' }}>
-                {translations.festival.shiftPlanner}
-              </Typography>
-              <Typography variant="subtitle1" sx={{ color: '#000000' }}>
-                {formatPrintDayLabel(activeDayPlan.dayDate)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#000000' }}>
-                {translations.grid.printTimestampLabel}: {formatPrintTimestamp(activePrintTimestamp)}
-              </Typography>
+            <Box className="coordinator-screen-plan">
+              {screenPlanGrid}
             </Box>
-            {planGrid}
+            {printPlanGrid}
           </Box>
         )}
       </Paper>

@@ -1,9 +1,11 @@
 import axios from 'axios';
 
+const DEV_API_PORT = import.meta.env.VITE_API_PORT || '8000';
+
 const API_URL = import.meta.env.VITE_API_URL || (
   import.meta.env.PROD
     ? `${window.location.protocol}//${window.location.host}`
-    : `${window.location.protocol}//${window.location.hostname}:8000`
+    : `${window.location.protocol}//${window.location.hostname}:${DEV_API_PORT}`
 );
 
 // Create axios instance

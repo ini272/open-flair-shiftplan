@@ -4,9 +4,11 @@ services:
   fastapi:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - .:/app  # Mount current directory for live reloading
+    environment:
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -15,9 +17,10 @@ services:
     volumes:
       - ./frontend:/app
     ports:
-      - "3000:3000"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     environment:
       - NODE_ENV=development
+      - VITE_API_PORT=8001
     depends_on:
       - fastapi

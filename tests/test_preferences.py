@@ -267,3 +267,135 @@ def test_generate_shift_plan(authenticated_client):
     shift2_response = authenticated_client.get(f"/shifts/{shift_id2}")
     shift2_data = shift2_response.json()
     assert len(shift2_data["users"]) <= 1
+
+
+def test_generate_shift_plan_does_not_split_groups(authenticated_client):
+    """Groups should only be assigned as a whole planning unit."""
+    group_response = authenticated_client.post("/groups/", json={"name": "Night Owls"})
+    group_id = group_response.json()["id"]
+
+    user_response1 = authenticated_client.post(
+        "/users/",
+        json={"email": "groupmember1@example.com", "username": "groupmember1"},
+    )
+    user_id1 = user_response1.json()["id"]
+
+    user_response2 = authenticated_client.post(
+        "/users/",
+        json={"email": "groupmember2@example.com", "username": "groupmember2"},
+    )
+    user_id2 = user_response2.json()["id"]
+
+    authenticated_client.post(f"/groups/{group_id}/users/{user_id1}")
+    authenticated_client.post(f"/groups/{group_id}/users/{user_id2}")
+
+    shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Too Small For Group",
+            "start_time": datetime(2026, 8, 6, 14, 0).isoformat(),
+            "end_time": datetime(2026, 8, 6, 16, 0).isoformat(),
+            "capacity": 1,
+        },
+    )
+    shift_id = shift_response.json()["id"]
+
+    response = authenticated_client.post("/shifts/generate-plan")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["assignments"] == []
+
+    shift_data = authenticated_client.get(f"/shifts/{shift_id}").json()
+    assert shift_data["users"] == []
+    assert shift_data["groups"] == []
+
+
+def test_generate_shift_plan_spreads_assignments_across_days(authenticated_client):
+    """A flexible user should be distributed across festival days before stacking one day."""
+    user_response = authenticated_client.post(
+        "/users/",
+        json={"email": "daybalance@example.com", "username": "daybalance"},
+    )
+    user_id = user_response.json()["id"]
+
+    shifts = [
+        ("Day 1 Early", datetime(2026, 8, 6, 14, 0), datetime(2026, 8, 6, 16, 0)),
+        ("Day 1 Late", datetime(2026, 8, 6, 16, 0), datetime(2026, 8, 6, 18, 0)),
+        ("Day 2 Early", datetime(2026, 8, 7, 14, 0), datetime(2026, 8, 7, 16, 0)),
+        ("Day 2 Late", datetime(2026, 8, 7, 16, 0), datetime(2026, 8, 7, 18, 0)),
+    ]
+
+    created_shift_ids = []
+    for title, start_time, end_time in shifts:
+        response = authenticated_client.post(
+            "/shifts/",
+            json={
+                "title": title,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "capacity": 1,
+            },
+        )
+        created_shift_ids.append(response.json()["id"])
+
+    response = authenticated_client.post("/shifts/generate-plan?max_shifts_per_user=2")
+    assert response.status_code == 200
+    data = response.json()
+
+    user_assignments = [assignment for assignment in data["assignments"] if assignment["user_id"] == user_id]
+    assert len(user_assignments) == 2
+
+    assigned_dates = {
+        authenticated_client.get(f"/shifts/{assignment['shift_id']}").json()["start_time"].split("T")[0]
+        for assignment in user_assignments
+    }
+    assert len(assigned_dates) == 2
+
+
+def test_generate_shift_plan_shares_weekend_evenings(authenticated_client):
+    """Friday/Saturday evening shifts should be shared before one user gets both."""
+    user_response1 = authenticated_client.post(
+        "/users/",
+        json={"email": "evening1@example.com", "username": "evening1"},
+    )
+    user_id1 = user_response1.json()["id"]
+
+    user_response2 = authenticated_client.post(
+        "/users/",
+        json={"email": "evening2@example.com", "username": "evening2"},
+    )
+    user_id2 = user_response2.json()["id"]
+
+    friday_shift = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Friday Main Act",
+            "start_time": datetime(2026, 8, 7, 20, 0).isoformat(),
+            "end_time": datetime(2026, 8, 7, 22, 0).isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    saturday_shift = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Saturday Main Act",
+            "start_time": datetime(2026, 8, 8, 20, 0).isoformat(),
+            "end_time": datetime(2026, 8, 8, 22, 0).isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    response = authenticated_client.post("/shifts/generate-plan?max_shifts_per_user=2")
+    assert response.status_code == 200
+    data = response.json()
+
+    evening_assignments = [
+        assignment
+        for assignment in data["assignments"]
+        if assignment["shift_id"] in {friday_shift, saturday_shift}
+    ]
+
+    assert len(evening_assignments) == 2
+    assert {assignment["user_id"] for assignment in evening_assignments} == {user_id1, user_id2}

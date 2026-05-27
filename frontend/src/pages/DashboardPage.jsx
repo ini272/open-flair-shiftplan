@@ -1,11 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Link, Stack, Chip, ToggleButton, ToggleButtonGroup
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Stack, ToggleButton, ToggleButtonGroup, Link
 } from '@mui/material';
-import { 
-  OpenInNew as OpenInNewIcon,
-  Schedule as ScheduleIcon 
-} from '@mui/icons-material';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
 import { authService, userService, shiftService } from '../services/api';
@@ -482,46 +479,149 @@ const DashboardPage = () => {
       {/* Tab Content */}
       {currentTab === 0 && (
         <Box>
-          {/* Festival Timetable Link */}
-          <Paper sx={{ p: 2, mb: 3, backgroundColor: 'primary.main', color: 'white' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                {translations.shifts.myShifts} - {translations.festival.name} {translations.festival.year}
-              </Typography>
-              <Link
-                href="https://www.open-flair.de/2026"
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{ 
-                  color: 'white', 
-                  textDecoration: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  '&:hover': {
-                    textDecoration: 'underline'
-                  }
-                }}
-              >
-                <ScheduleIcon />
-                <Typography variant="body1">
-                  {translations.festival.timetable}
-                </Typography>
-                <OpenInNewIcon fontSize="small" />
-              </Link>
-            </Box>
-            <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-              {translations.festival.dates} • {translations.festival.location}
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 2.5,
+              px: { xs: 1.5, sm: 2 },
+              py: 1.5,
+              borderRadius: 3,
+              boxShadow: 'none',
+            }}
+          >
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
+              {translations.shifts.selectionTipsTitle}
             </Typography>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Box>
+                <Box
+                  component="ul"
+                  sx={{
+                    m: 0,
+                    pl: 2.5,
+                    color: 'text.secondary',
+                    '& li + li': { mt: 0.75 },
+                  }}
+                >
+                  <Box component="li">
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      {translations.shifts.selectionIntroPrefix}{' '}
+                    </Typography>
+                    <Box
+                      component="span"
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        px: 0.75,
+                        py: 0.1,
+                        borderRadius: 1,
+                        bgcolor: 'success.light',
+                        color: 'success.contrastText',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {translations.shifts.selectionColorAvailable}
+                    </Box>{' '}
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      {translations.shifts.selectionIntroMiddle}
+                    </Typography>
+                  </Box>
+
+                  <Box component="li">
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      {translations.shifts.selectionTogglePrefix}{' '}
+                    </Typography>
+                    <Box
+                      component="span"
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        px: 0.75,
+                        py: 0.1,
+                        borderRadius: 1,
+                        bgcolor: 'error.light',
+                        color: 'error.contrastText',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {translations.shifts.selectionColorUnavailable}
+                    </Box>{' '}
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      {translations.shifts.selectionToggleSuffix}
+                    </Typography>
+                  </Box>
+
+                  <Box component="li">
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      {translations.shifts.selectionHintSchedulePrefix}{' '}
+                    </Typography>
+                    <Link
+                      href="https://www.open-flair.de/2026/timetable"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      underline="hover"
+                      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, fontWeight: 600 }}
+                    >
+                      {translations.shifts.selectionHintScheduleLink}
+                      <OpenInNewIcon sx={{ fontSize: 14 }} />
+                    </Link>
+                    <Typography variant="body2" component="span" color="text.secondary">
+                      .
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                  {translations.shifts.selectionAutoTitle}
+                </Typography>
+                <Box
+                  component="ul"
+                  sx={{
+                    m: 0,
+                    pl: 2.5,
+                    color: 'text.secondary',
+                    '& li + li': { mt: 0.75 },
+                  }}
+                >
+                  <Box component="li">
+                    <Typography variant="body2" color="text.secondary">
+                      {translations.shifts.selectionPlannerFairness}
+                    </Typography>
+                  </Box>
+                  <Box component="li">
+                    <Typography variant="body2" color="text.secondary">
+                      {translations.shifts.selectionPlannerOnlyGreen}
+                    </Typography>
+                  </Box>
+                  <Box component="li">
+                    <Typography variant="body2" color="text.secondary">
+                      {translations.shifts.selectionPlannerWeekend}
+                    </Typography>
+                  </Box>
+                  <Box component="li">
+                    <Typography variant="body2" color="text.secondary">
+                      {translations.shifts.selectionPlannerMaxShifts}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    px: 0.25,
+                    color: 'success.dark',
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                    {translations.shifts.selectionPlannerKeepGreen}
+                  </Typography>
+                </Box>
+              </Box>
+            </Stack>
           </Paper>
 
-          <Typography variant="h5" gutterBottom>
-            {translations.shifts.availableShifts}
-          </Typography>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            {translations.shifts.clickToToggle}
-          </Typography>
-          
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6" gutterBottom>
               Standort-Präferenz

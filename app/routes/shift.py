@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -23,6 +23,57 @@ router = APIRouter(
 
 # Get the tracer for this module
 tracer = get_tracer()
+
+
+def get_shift_day_key(shift) -> str:
+    """Return a stable day key for a shift."""
+    return shift.start_time.date().isoformat()
+
+
+def get_shift_slot_signature(shift) -> Tuple[int, int, int, int]:
+    """Return a time-slot signature so parallel location shifts share the same slot index."""
+    return (
+        shift.start_time.hour,
+        shift.start_time.minute,
+        shift.end_time.hour,
+        shift.end_time.minute,
+    )
+
+
+def is_weekend_evening_shift(shift) -> bool:
+    """Friday/Saturday evening shifts start at or after 20:00."""
+    return shift.start_time.weekday() in (4, 5) and (
+        shift.start_time.hour,
+        shift.start_time.minute,
+    ) >= (20, 0)
+
+
+def get_max_consecutive_slots(slot_positions: List[int]) -> int:
+    """Return the longest chain of consecutive slot indices."""
+    if not slot_positions:
+        return 0
+
+    ordered_positions = sorted(slot_positions)
+    max_streak = 1
+    current_streak = 1
+
+    for previous, current in zip(ordered_positions, ordered_positions[1:]):
+        if current == previous + 1:
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+        else:
+            current_streak = 1
+
+    return max_streak
+
+
+def has_single_slot_gap(slot_positions: List[int]) -> bool:
+    """Return True if there is exactly one empty slot between two assignments."""
+    ordered_positions = sorted(slot_positions)
+    return any(
+        current == previous + 2
+        for previous, current in zip(ordered_positions, ordered_positions[1:])
+    )
 
 @router.post("/", response_model=Shift, status_code=status.HTTP_201_CREATED)
 def create_shift(
@@ -477,184 +528,305 @@ def generate_shift_plan(
         db.commit()
         span.add_event("existing_assignments_cleared")
         
-        import random
-        
         # Track assignments and conflicts
         assignments = []
         group_assignments = 0
         individual_assignments = 0
         conflicts_avoided = 0
         max_shifts_limit_hits = 0
-        
-        # Sort shifts by start time
-        sorted_shifts = sorted(active_shifts, key=lambda s: s.start_time)
-        
-        # Track user assignments to avoid time conflicts and respect max shifts limit
-        user_assignments = {user.id: [] for user in active_users}
+
+        # Build slot indices so we can reason about consecutive and one-gap patterns per day.
+        shifts_by_day: Dict[str, List[Any]] = {}
+        for shift in active_shifts:
+            day_key = get_shift_day_key(shift)
+            shifts_by_day.setdefault(day_key, []).append(shift)
+
+        shift_slot_index: Dict[int, int] = {}
+        for day_key, day_shifts in shifts_by_day.items():
+            ordered_slot_signatures = []
+            for shift in sorted(day_shifts, key=lambda s: (s.start_time, s.end_time, s.id)):
+                slot_signature = get_shift_slot_signature(shift)
+                if slot_signature not in ordered_slot_signatures:
+                    ordered_slot_signatures.append(slot_signature)
+
+            slot_index_by_signature = {
+                signature: index for index, signature in enumerate(ordered_slot_signatures)
+            }
+
+            for shift in day_shifts:
+                shift_slot_index[shift.id] = slot_index_by_signature[get_shift_slot_signature(shift)]
+
+        # Planning units are active groups plus standalone users. Grouped users are never split up.
+        planning_units: List[Dict[str, Any]] = []
+        active_group_ids: Set[int] = set()
+
+        for group in active_groups:
+            group_users = [user for user in group.users if user.is_active]
+            if not group_users:
+                continue
+
+            planning_units.append({
+                "key": f"group-{group.id}",
+                "type": "group",
+                "group": group,
+                "members": group_users,
+                "size": len(group_users),
+                "label": group.name,
+                "sort_order": (0, group.id),
+            })
+            active_group_ids.add(group.id)
+
+        for user in active_users:
+            active_group = user.group if user.group and user.group.is_active else None
+            if active_group and active_group.id in active_group_ids:
+                continue
+
+            planning_units.append({
+                "key": f"user-{user.id}",
+                "type": "individual",
+                "user": user,
+                "members": [user],
+                "size": 1,
+                "label": user.username,
+                "sort_order": (1, user.id),
+            })
+
+        if not planning_units:
+            return {
+                "message": "No active planning units found",
+                "assignments": [],
+                "statistics": {
+                    "shifts_assigned": 0,
+                    "total_assignments": 0,
+                    "group_assignments": 0,
+                    "individual_assignments": 0,
+                    "average_assignments_per_user": 0,
+                    "conflicts_avoided": 0,
+                    "max_shifts_limit_hits": 0,
+                }
+            }
+
+        def unit_is_available_for_shift(unit: Dict[str, Any], shift: Any) -> bool:
+            capacity = shift.capacity or 5
+            if unit["size"] > capacity:
+                return False
+
+            return all(
+                not shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id)
+                for user in unit["members"]
+            )
+
+        unit_available_shift_ids: Dict[str, Set[int]] = {}
+        unit_available_day_keys: Dict[str, Set[str]] = {}
+        unit_available_evening_counts: Dict[str, int] = {}
+
+        for unit in planning_units:
+            available_shift_ids = set()
+            available_day_keys = set()
+            available_evening_count = 0
+
+            for shift in active_shifts:
+                if not unit_is_available_for_shift(unit, shift):
+                    continue
+
+                available_shift_ids.add(shift.id)
+                available_day_keys.add(get_shift_day_key(shift))
+
+                if is_weekend_evening_shift(shift):
+                    available_evening_count += 1
+
+            unit_available_shift_ids[unit["key"]] = available_shift_ids
+            unit_available_day_keys[unit["key"]] = available_day_keys
+            unit_available_evening_counts[unit["key"]] = available_evening_count
+
+        potential_unit_count = {
+            shift.id: sum(
+                1
+                for unit in planning_units
+                if shift.id in unit_available_shift_ids[unit["key"]]
+            )
+            for shift in active_shifts
+        }
+
+        sorted_shifts = sorted(
+            active_shifts,
+            key=lambda shift: (
+                0 if is_weekend_evening_shift(shift) else 1,
+                shift_slot_index[shift.id],
+                potential_unit_count[shift.id],
+                shift.start_time.date(),
+                shift.start_time,
+                shift.id,
+            ),
+        )
+
+        unit_assignments: Dict[str, List[Any]] = {unit["key"]: [] for unit in planning_units}
+        unit_shift_count: Dict[str, int] = {unit["key"]: 0 for unit in planning_units}
+        unit_assigned_days: Dict[str, Set[str]] = {unit["key"]: set() for unit in planning_units}
+        unit_day_slots: Dict[str, Dict[str, List[int]]] = {unit["key"]: {} for unit in planning_units}
+        unit_evening_count: Dict[str, int] = {unit["key"]: 0 for unit in planning_units}
         user_shift_count = {user.id: 0 for user in active_users}
-        
-        # Process each shift
+
+        def unit_has_time_conflict(unit: Dict[str, Any], shift: Any) -> bool:
+            return any(
+                shifts_overlap(shift, assigned_shift)
+                for assigned_shift in unit_assignments[unit["key"]]
+            )
+
+        def score_unit_for_shift(unit: Dict[str, Any], shift: Any) -> float:
+            unit_key = unit["key"]
+            day_key = get_shift_day_key(shift)
+            assigned_days = unit_assigned_days[unit_key]
+            available_days = unit_available_day_keys[unit_key]
+            same_day_slots = unit_day_slots[unit_key].get(day_key, [])
+            candidate_slots = sorted(same_day_slots + [shift_slot_index[shift.id]])
+
+            score = 0.0
+
+            # Balance overall load first.
+            score -= unit_shift_count[unit_key] * 30
+
+            # Scarcer units should be placed before highly flexible ones.
+            score += max(0, 10 - len(unit_available_shift_ids[unit_key])) * 3
+
+            # Prefer spreading assignments across festival days whenever possible.
+            if day_key not in assigned_days:
+                score += 34
+                if len(available_days) > 1:
+                    score += 18
+            elif available_days - assigned_days:
+                score -= 18
+            else:
+                score += 4
+
+            # Prefer fewer assignments on the same day.
+            score -= len(same_day_slots) * 8
+
+            # Avoid stretches longer than two slots and avoid "one-slot gap" patterns.
+            max_consecutive_slots = get_max_consecutive_slots(candidate_slots)
+            if max_consecutive_slots > 2:
+                score -= 90 * (max_consecutive_slots - 2)
+            elif max_consecutive_slots == 2:
+                score += 6
+
+            if has_single_slot_gap(candidate_slots):
+                score -= 45
+
+            # Friday/Saturday >= 20:00 should be shared fairly across planning units.
+            if is_weekend_evening_shift(shift):
+                if unit_evening_count[unit_key] == 0:
+                    score += 55
+                    if unit_available_evening_counts[unit_key] == 1:
+                        score += 15
+                else:
+                    score -= 35 * unit_evening_count[unit_key]
+
+            return score
+
         for shift in sorted_shifts:
             span.add_event("processing_shift", {
                 "shift_id": shift.id,
                 "title": shift.title,
                 "capacity": shift.capacity
             })
-            
-            # Calculate current assignments
-            current_user_count = len(shift.users)
-            capacity = shift.capacity or 5  # Default capacity if none set
-            remaining_capacity = capacity - current_user_count
-            
+
+            capacity = shift.capacity or 5
+            remaining_capacity = capacity - len(shift.users)
+
             if remaining_capacity <= 0:
                 span.add_event("shift_already_full", {"shift_id": shift.id})
                 continue
-            
-            # Strategy: Try to assign groups first (more efficient), then individuals
-            
-            # 1. Try to assign groups (always enabled now)
-            if remaining_capacity >= 2:  # Only try groups if we have space for at least 2 people
-                eligible_groups = []
-                
-                for group in active_groups:
-                    # Skip if group already assigned to this shift
-                    if group in shift.groups:
+
+            assigned_unit_keys_for_shift: Set[str] = set()
+
+            while remaining_capacity > 0:
+                eligible_units = []
+
+                for unit in planning_units:
+                    unit_key = unit["key"]
+
+                    if unit_key in assigned_unit_keys_for_shift:
                         continue
-                    
-                    # Get active users in this group
-                    group_users = [user for user in group.users if user.is_active]
-                    if not group_users:
+
+                    if shift.id not in unit_available_shift_ids[unit_key]:
                         continue
-                    
-                    # Check if group would fit in remaining capacity
-                    if len(group_users) > remaining_capacity:
+
+                    if unit["size"] > remaining_capacity:
                         continue
-                    
-                    # Check if any user in the group has opted out of this shift
-                    group_has_opt_out = False
-                    for user in group_users:
-                        if shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id):
-                            group_has_opt_out = True
-                            break
-                    
-                    if group_has_opt_out:
-                        continue
-                    
-                    # Check if any user in the group would exceed max shifts limit
-                    group_exceeds_limit = False
-                    for user in group_users:
-                        if user_shift_count[user.id] >= max_shifts_per_user:
-                            group_exceeds_limit = True
-                            max_shifts_limit_hits += 1
-                            break
-                    
-                    if group_exceeds_limit:
-                        continue
-                    
-                    # Check for time conflicts for all users in the group
-                    group_has_conflict = False
-                    for user in group_users:
-                        for assigned_shift_id in user_assignments[user.id]:
-                            assigned_shift = next((s for s in sorted_shifts if s.id == assigned_shift_id), None)
-                            if assigned_shift and shifts_overlap(shift, assigned_shift):
-                                group_has_conflict = True
-                                conflicts_avoided += 1
-                                break
-                        if group_has_conflict:
-                            break
-                    
-                    if not group_has_conflict:
-                        eligible_groups.append((group, group_users))
-                
-                # Assign one group randomly if available
-                if eligible_groups:
-                    selected_group, group_users = random.choice(eligible_groups)
-                    
-                    # Assign the group
-                    shift.groups.append(selected_group)
-                    
-                    # Assign all users in the group
-                    for user in group_users:
-                        if user not in shift.users:  # Avoid duplicates
-                            shift.users.append(user)
-                            user_assignments[user.id].append(shift.id)
-                            user_shift_count[user.id] += 1
-                            
-                            assignments.append({
-                                "shift_id": shift.id,
-                                "shift_title": shift.title,
-                                "user_id": user.id,
-                                "username": user.username,
-                                "assigned_via": "group",
-                                "group_name": selected_group.name
-                            })
-                    
-                    group_assignments += 1
-                    remaining_capacity -= len(group_users)
-                    
-                    span.add_event("group_assigned", {
-                        "shift_id": shift.id,
-                        "group_id": selected_group.id,
-                        "group_name": selected_group.name,
-                        "users_count": len(group_users)
-                    })
-            
-            # 2. Fill remaining capacity with individual users
-            if remaining_capacity > 0:
-                already_assigned = {user.id for user in shift.users}
-                eligible_users = []
-                
-                for user in active_users:
-                    # Skip if already assigned to this shift
-                    if user.id in already_assigned:
-                        continue
-                    
-                    # Check if user has opted out of this shift
-                    if shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id):
-                        continue
-                    
-                    # Check if user would exceed max shifts limit
-                    if user_shift_count[user.id] >= max_shifts_per_user:
+
+                    if any(user_shift_count[user.id] >= max_shifts_per_user for user in unit["members"]):
                         max_shifts_limit_hits += 1
                         continue
-                    
-                    # Check for time conflicts
-                    has_conflict = False
-                    for assigned_shift_id in user_assignments[user.id]:
-                        assigned_shift = next((s for s in sorted_shifts if s.id == assigned_shift_id), None)
-                        if assigned_shift and shifts_overlap(shift, assigned_shift):
-                            has_conflict = True
-                            conflicts_avoided += 1
-                            break
-                    
-                    if not has_conflict:
-                        eligible_users.append(user)
-                
-                # Assign individual users randomly
-                assignment_count = min(len(eligible_users), remaining_capacity)
-                if assignment_count > 0:
-                    selected_users = random.sample(eligible_users, assignment_count)
-                    
-                    for user in selected_users:
+
+                    if unit_has_time_conflict(unit, shift):
+                        conflicts_avoided += 1
+                        continue
+
+                    eligible_units.append(unit)
+
+                if not eligible_units:
+                    break
+
+                scored_units = sorted(
+                    (
+                        (
+                            -score_unit_for_shift(unit, shift),
+                            unit_shift_count[unit["key"]],
+                            unit["sort_order"],
+                            unit,
+                        )
+                        for unit in eligible_units
+                    ),
+                    key=lambda item: (item[0], item[1], item[2]),
+                )
+
+                selected_unit = scored_units[0][3]
+                selected_unit_key = selected_unit["key"]
+                selected_day_key = get_shift_day_key(shift)
+
+                assigned_unit_keys_for_shift.add(selected_unit_key)
+                unit_assignments[selected_unit_key].append(shift)
+                unit_shift_count[selected_unit_key] += 1
+                unit_assigned_days[selected_unit_key].add(selected_day_key)
+                unit_day_slots[selected_unit_key].setdefault(selected_day_key, []).append(
+                    shift_slot_index[shift.id]
+                )
+
+                if is_weekend_evening_shift(shift):
+                    unit_evening_count[selected_unit_key] += 1
+
+                if selected_unit["type"] == "group":
+                    selected_group = selected_unit["group"]
+                    if selected_group not in shift.groups:
+                        shift.groups.append(selected_group)
+                    group_assignments += 1
+                else:
+                    selected_group = None
+                    individual_assignments += 1
+
+                for user in selected_unit["members"]:
+                    if user not in shift.users:
                         shift.users.append(user)
-                        user_assignments[user.id].append(shift.id)
-                        user_shift_count[user.id] += 1
-                        
-                        assignments.append({
-                            "shift_id": shift.id,
-                            "shift_title": shift.title,
-                            "user_id": user.id,
-                            "username": user.username,
-                            "assigned_via": "individual",
-                            "group_name": user.group.name if user.group else None
-                        })
-                    
-                    individual_assignments += len(selected_users)
-                    
-                    span.add_event("individuals_assigned", {
+                    user_shift_count[user.id] += 1
+
+                    assignments.append({
                         "shift_id": shift.id,
-                        "assigned_count": len(selected_users)
+                        "shift_title": shift.title,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "assigned_via": "group" if selected_unit["type"] == "group" else "individual",
+                        "group_name": selected_group.name if selected_group else None,
                     })
+
+                remaining_capacity -= selected_unit["size"]
+
+                span.add_event("planning_unit_assigned", {
+                    "shift_id": shift.id,
+                    "planning_unit": selected_unit["label"],
+                    "assigned_via": selected_unit["type"],
+                    "unit_size": selected_unit["size"],
+                    "remaining_capacity": remaining_capacity,
+                })
         
         # Commit all changes
         try:
