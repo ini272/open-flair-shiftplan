@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
   Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Stack, ToggleButton, ToggleButtonGroup, Link
 } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
@@ -26,56 +27,22 @@ const DashboardPage = () => {
   const [currentTab, setCurrentTab] = useState(0);
   const [userGroup, setUserGroup] = useState(null);
   const [locationPreference, setLocationPreference] = useState('both');
+  const [isSavingLocationPreference, setIsSavingLocationPreference] = useState(false);
   const navigate = useNavigate();
 
-  // Add this helper function at the top of the component:
-  const getShiftLocation = (shiftTitle) => {
-    const title = shiftTitle.toLowerCase();
-    if (title.includes('weinzelt')) return 'weinzelt';
-    if (title.includes('bierwagen')) return 'bierwagen';
-    return 'unknown';
-  };
+  const getShiftSlotKey = useCallback((shift) => {
+    const start = new Date(shift.start_time);
+    const end = new Date(shift.end_time);
+    const dayKey = start.toISOString().split('T')[0];
+    const timeKey = [
+      start.getHours(),
+      start.getMinutes(),
+      end.getHours(),
+      end.getMinutes(),
+    ].join(':');
 
-  // Add this handler function:
-  const handleLocationChange = async (event, newLocation) => {
-    if (!newLocation) return; // Prevent deselecting all options
-    
-    setLocationPreference(newLocation);
-    
-    if (newLocation === 'both') {
-      // Simple approach: Opt in to ALL shifts (make everything green)
-      const allShifts = shifts.filter(shift => {
-        const shiftLocation = getShiftLocation(shift.title);
-        return shiftLocation === 'weinzelt' || shiftLocation === 'bierwagen';
-      });
-      
-      if (allShifts.length > 0) {
-        await handleBatchDayToggle(allShifts, true); // Opt in to everything
-      }
-    } else {
-      // Filter shifts by location and batch opt-out from unwanted location
-      const targetLocation = newLocation;
-      const shiftsToOptOut = shifts.filter(shift => {
-        const shiftLocation = getShiftLocation(shift.title);
-        return shiftLocation !== targetLocation && shiftLocation !== 'unknown';
-      });
-      
-      const shiftsToOptIn = shifts.filter(shift => {
-        const shiftLocation = getShiftLocation(shift.title);
-        return shiftLocation === targetLocation;
-      });
-      
-      // Batch opt-out from unwanted location
-      if (shiftsToOptOut.length > 0) {
-        await handleBatchDayToggle(shiftsToOptOut, false);
-      }
-      
-      // Batch opt-in to preferred location
-      if (shiftsToOptIn.length > 0) {
-        await handleBatchDayToggle(shiftsToOptIn, true);
-      }
-    }
-  };
+    return `${dayKey}-${timeKey}`;
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -96,6 +63,7 @@ const DashboardPage = () => {
 
         const userResponse = await userService.getUser(userId);
         setUser(userResponse.data);
+        setLocationPreference(userResponse.data.location_preference || 'both');
 
         // Check coordinator status from user data
         setIsCoordinator(userResponse.data.is_coordinator || false);
@@ -130,6 +98,7 @@ const DashboardPage = () => {
           const response = await groupService.getGroup(user.group_id);
           console.log('Group details:', response.data);
           setUserGroup(response.data);
+          setLocationPreference(response.data.location_preference || 'both');
         } catch (error) {
           console.error('Error fetching user group:', error);
         }
@@ -155,109 +124,42 @@ const DashboardPage = () => {
     return shifts.map(shift => shift.id).filter(id => !optedOutShifts.includes(id));
   }, [shifts, optedOutShifts]);
 
-  // Use useCallback with all dependencies
-  const handleTogglePreference = useCallback(async (shiftId) => {
-    if (!user) return;
-    
-    // Check if there's already a pending operation for this shift
-    if (pendingOperations[shiftId]) return;
-    
-    // Create a unique operation ID
-    const operationId = `toggle-${shiftId}-${Date.now()}`;
-    
-    // Determine if the shift is currently opted out
-    const isOptedOut = optedOutShifts.includes(shiftId);
-    
-    // Update state in a single batch if possible
-    setPendingOperations(prev => ({
-      ...prev,
-      [shiftId]: operationId
-    }));
-    
-    // Optimistically update the UI immediately
-    setOptedOutShifts(prev => 
-      isOptedOut 
-        ? prev.filter(id => id !== shiftId) // Remove from opted-out list
-        : [...prev, shiftId] // Add to opted-out list
-    );
-    
-    // Make the API call immediately
+  const handleLocationChange = useCallback(async (event, newLocation) => {
+    if (!user || !newLocation || newLocation === locationPreference) {
+      return;
+    }
+
+    const previousPreference = locationPreference;
+    setLocationPreference(newLocation);
+    setIsSavingLocationPreference(true);
+
     try {
       if (user.group_id) {
-        // User is in a group - use group opt-out endpoints
-        if (isOptedOut) {
-          // Opt back in (remove from opted-out list)
-          await shiftService.optInGroup({
-            shift_id: shiftId,
-            group_id: user.group_id
-          });
-          setSnackbar({
-            open: true,
-            message: `Gruppe wieder für Schicht verfügbar`,
-            severity: 'success'
-          });
-        } else {
-          // Opt out
-          await shiftService.optOutGroup({
-            shift_id: shiftId,
-            group_id: user.group_id
-          });
-          setSnackbar({
-            open: true,
-            message: `Gruppe von Schicht abgemeldet`,
-            severity: 'success'
-          });
-        }
+        const response = await groupService.updateGroup(user.group_id, {
+          location_preference: newLocation,
+        });
+        setUserGroup(prev => ({
+          ...(prev || {}),
+          ...response.data,
+        }));
       } else {
-        // Individual user - use individual opt-out endpoints
-        if (isOptedOut) {
-          // Opt back in (remove from opted-out list)
-          await shiftService.optInUser({
-            shift_id: shiftId,
-            user_id: user.id
-          });
-          setSnackbar({
-            open: true,
-            message: translations.shifts.optedInSuccess,
-            severity: 'success'
-          });
-        } else {
-          // Opt out
-          await shiftService.optOutUser({
-            shift_id: shiftId,
-            user_id: user.id
-          });
-          setSnackbar({
-            open: true,
-            message: translations.shifts.optedOutSuccess,
-            severity: 'success'
-          });
-        }
+        const response = await userService.updateUser(user.id, {
+          location_preference: newLocation,
+        });
+        setUser(response.data);
       }
     } catch (error) {
-      console.error('Error updating shift preference:', error);
-      
-      // Revert the optimistic update
-      setOptedOutShifts(prev => 
-        isOptedOut 
-          ? [...prev, shiftId] // Add back to opted-out list
-          : prev.filter(id => id !== shiftId) // Remove from opted-out list
-      );
-      
+      console.error('Error updating location preference:', error);
+      setLocationPreference(previousPreference);
       setSnackbar({
         open: true,
-        message: error.response?.data?.detail || translations.shifts.updateFailed,
+        message: translations.shifts.locationPreferenceUpdateFailed,
         severity: 'error'
       });
     } finally {
-      // Clear the pending operation
-      setPendingOperations(prev => {
-        const newPending = { ...prev };
-        delete newPending[shiftId];
-        return newPending;
-      });
+      setIsSavingLocationPreference(false);
     }
-  }, [user, pendingOperations, optedOutShifts]);
+  }, [locationPreference, user]);
 
   // New batch day toggle handler
   const handleBatchDayToggle = useCallback(async (dayShifts, shouldSelect) => {
@@ -351,13 +253,26 @@ const DashboardPage = () => {
       // Process results
       const successfulOperations = [];
       const failedOperations = [];
+      const slotOutcomeMap = new Map();
       
       results.forEach((result, index) => {
+        const processedShift = shiftsToProcess[index];
+        const slotKey = getShiftSlotKey(processedShift.shift);
+        const currentSlotOutcome = slotOutcomeMap.get(slotKey) || {
+          total: 0,
+          success: 0,
+        };
+
+        currentSlotOutcome.total += 1;
+
         if (result.status === 'fulfilled' && result.value.success) {
           successfulOperations.push(result.value);
+          currentSlotOutcome.success += 1;
         } else {
-          failedOperations.push(shiftsToProcess[index]);
+          failedOperations.push(processedShift);
         }
+
+        slotOutcomeMap.set(slotKey, currentSlotOutcome);
       });
       
       // Revert failed operations in the UI
@@ -389,8 +304,12 @@ const DashboardPage = () => {
       });
       
       // Show results
-      const successCount = successfulOperations.length;
-      const failCount = failedOperations.length;
+      const successCount = Array.from(slotOutcomeMap.values()).filter(
+        (slotOutcome) => slotOutcome.success === slotOutcome.total
+      ).length;
+      const failCount = Array.from(slotOutcomeMap.values()).filter(
+        (slotOutcome) => slotOutcome.success < slotOutcome.total
+      ).length;
       const formatDate = (dateStr) => {
         const date = new Date(dateStr);
         return date.toLocaleDateString('de-DE', {
@@ -401,22 +320,34 @@ const DashboardPage = () => {
       };
       
       if (successCount > 0 && failCount === 0) {
-        const action = shouldSelect ? 'ausgewählt' : 'abgewählt';
+        const successTemplate = shouldSelect
+          ? translations.shifts.batchSelectSuccess
+          : translations.shifts.batchDeselectSuccess;
         setSnackbar({
           open: true,
-          message: `${successCount} ${translations.shifts.batchSelectSuccess.replace('{day}', formatDate(day))}`,
+          message: successTemplate
+            .replace('{count}', successCount)
+            .replace('{day}', formatDate(day)),
           severity: 'success'
         });
       } else if (successCount > 0 && failCount > 0) {
         setSnackbar({
           open: true,
-          message: `${successCount} shifts updated, ${failCount} failed for ${formatDate(day)}`,
+          message: translations.shifts.batchPartialSuccess
+            .replace('{successCount}', successCount)
+            .replace('{failCount}', failCount)
+            .replace('{day}', formatDate(day)),
           severity: 'warning'
         });
       } else if (failCount > 0) {
+        const failedTemplate = shouldSelect
+          ? translations.shifts.batchSelectFailed
+          : translations.shifts.batchDeselectFailed;
         setSnackbar({
           open: true,
-          message: `Failed to update ${failCount} shifts for ${formatDate(day)}`,
+          message: failedTemplate
+            .replace('{count}', failCount)
+            .replace('{day}', formatDate(day)),
           severity: 'error'
         });
       }
@@ -436,7 +367,7 @@ const DashboardPage = () => {
         return updated;
       });
     }
-  }, [user, optedOutShifts]);
+  }, [getShiftSlotKey, optedOutShifts, user]);
 
   const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
@@ -624,7 +555,7 @@ const DashboardPage = () => {
 
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Standort-Präferenz
+              {translations.shifts.locationPreferenceTitle}
             </Typography>
             <ToggleButtonGroup
               value={locationPreference}
@@ -632,23 +563,39 @@ const DashboardPage = () => {
               onChange={handleLocationChange}
               aria-label="location preference"
               sx={{ mb: 2 }}
+              disabled={isSavingLocationPreference}
             >
               <ToggleButton value="both">
-                Beide Standorte
+                {translations.shifts.locationPreferenceBoth}
               </ToggleButton>
               <ToggleButton value="weinzelt">
-                Nur Weinzelt
+                {translations.shifts.locationPreferenceWeinzelt}
               </ToggleButton>
               <ToggleButton value="bierwagen">
-                Nur Bierwagen
+                {translations.shifts.locationPreferenceBierwagen}
               </ToggleButton>
             </ToggleButtonGroup>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+              {translations.shifts.locationPreferenceHelper}
+            </Typography>
+
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ color: 'text.secondary' }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+              <Typography variant="body2">
+                {translations.shifts.selectionAutoSave}
+              </Typography>
+            </Stack>
           </Box>
           
           <ShiftGrid 
             shifts={shifts} 
             userPreferences={availableShiftIds} 
-            onTogglePreference={handleTogglePreference}
             pendingOperations={pendingOperations}
             onBatchDayToggle={handleBatchDayToggle}
             batchPendingDays={batchPendingDays}

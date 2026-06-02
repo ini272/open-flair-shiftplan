@@ -76,6 +76,15 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
             shift_groups.c.group_id == group_id,
             Shift.is_active == True
         ).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def share_slot(first_shift: Shift, second_shift: Shift) -> bool:
+        """Return True when two shifts describe the same day/time slot."""
+        return (
+            first_shift.start_time.date() == second_shift.start_time.date()
+            and first_shift.start_time.time() == second_shift.start_time.time()
+            and first_shift.end_time.time() == second_shift.end_time.time()
+        )
     
     def add_user_to_shift(
         self, 
@@ -418,6 +427,33 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
                     
         return False
 
+    def is_user_available_for_slot(
+        self,
+        db: Session,
+        *,
+        shift_id: int,
+        user_id: int
+    ) -> bool:
+        """
+        Return True if a user is available for any shift in the same day/timeslot.
+
+        This collapses parallel Weinzelt/Bierwagen shifts into a single availability slot.
+        """
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return False
+
+        same_slot_shifts = db.query(Shift).filter(
+            Shift.is_active == True,
+            Shift.start_time == shift.start_time,
+            Shift.end_time == shift.end_time,
+        ).all()
+
+        return any(
+            not self.is_user_opted_out(db, shift_id=parallel_shift.id, user_id=user_id)
+            for parallel_shift in same_slot_shifts
+        )
+
     def get_user_opt_outs(
         self, 
         db: Session, 
@@ -502,7 +538,7 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         # Filter out opted-out users
         available_users = []
         for user in all_users:
-            if not self.is_user_opted_out(db, shift_id=shift_id, user_id=user.id):
+            if self.is_user_available_for_slot(db, shift_id=shift_id, user_id=user.id):
                 available_users.append(user)
                 
         return available_users

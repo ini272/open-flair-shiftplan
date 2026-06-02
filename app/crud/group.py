@@ -27,7 +27,8 @@ class CRUDGroup(CRUDBase[Group, GroupCreate, GroupUpdate]):
         # Create a dict of group data
         db_obj = Group(
             name=obj_in.name,
-            is_active=True
+            is_active=True,
+            location_preference=obj_in.location_preference or "both",
         )
         
         # Add to database

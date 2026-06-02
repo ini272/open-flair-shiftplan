@@ -27,7 +27,8 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
         db_obj = User(
             email=obj_in.email,
             username=obj_in.username,
-            is_active=True
+            is_active=True,
+            location_preference=obj_in.location_preference or "both",
         )
         
         # Add to database

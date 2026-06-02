@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional, Set, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -25,9 +25,21 @@ router = APIRouter(
 tracer = get_tracer()
 
 
+def get_planner_day_start(shift) -> datetime:
+    """
+    Return the festival-planning day a shift belongs to.
+
+    Early-morning slots after midnight still belong to the previous festival night.
+    """
+    shift_start = shift.start_time
+    if shift_start.hour < 6:
+        return shift_start - timedelta(days=1)
+    return shift_start
+
+
 def get_shift_day_key(shift) -> str:
     """Return a stable day key for a shift."""
-    return shift.start_time.date().isoformat()
+    return get_planner_day_start(shift).date().isoformat()
 
 
 def get_shift_slot_signature(shift) -> Tuple[int, int, int, int]:
@@ -40,12 +52,33 @@ def get_shift_slot_signature(shift) -> Tuple[int, int, int, int]:
     )
 
 
+def get_shift_slot_key(shift) -> Tuple[str, Tuple[int, int, int, int]]:
+    """Return a slot key that is stable per day and timeslot."""
+    return (get_shift_day_key(shift), get_shift_slot_signature(shift))
+
+
+def get_shift_location_key(shift) -> str:
+    """Map a shift title to its location key."""
+    normalized_title = shift.title.lower()
+    if "weinzelt" in normalized_title:
+        return "weinzelt"
+    if "bierwagen" in normalized_title:
+        return "bierwagen"
+    return "both"
+
+
 def is_weekend_evening_shift(shift) -> bool:
-    """Friday/Saturday evening shifts start at or after 20:00."""
-    return shift.start_time.weekday() in (4, 5) and (
-        shift.start_time.hour,
-        shift.start_time.minute,
-    ) >= (20, 0)
+    """
+    Friday/Saturday evening shifts include the night after midnight.
+
+    This treats 00:00-02:00 slots as part of the previous festival night.
+    """
+    planner_day = get_planner_day_start(shift)
+    shift_starts_in_evening_window = (
+        (shift.start_time.hour, shift.start_time.minute) >= (20, 0)
+        or shift.start_time.hour < 6
+    )
+    return planner_day.weekday() in (4, 5) and shift_starts_in_evening_window
 
 
 def get_max_consecutive_slots(slot_positions: List[int]) -> int:
@@ -572,6 +605,7 @@ def generate_shift_plan(
                 "members": group_users,
                 "size": len(group_users),
                 "label": group.name,
+                "location_preference": group.location_preference or "both",
                 "sort_order": (0, group.id),
             })
             active_group_ids.add(group.id)
@@ -588,6 +622,7 @@ def generate_shift_plan(
                 "members": [user],
                 "size": 1,
                 "label": user.username,
+                "location_preference": user.location_preference or "both",
                 "sort_order": (1, user.id),
             })
 
@@ -606,7 +641,12 @@ def generate_shift_plan(
                 }
             }
 
-        def unit_is_available_for_shift(unit: Dict[str, Any], shift: Any) -> bool:
+        shift_slot_key: Dict[int, Tuple[str, Tuple[int, int, int, int]]] = {
+            shift.id: get_shift_slot_key(shift)
+            for shift in active_shifts
+        }
+
+        def unit_can_work_specific_shift(unit: Dict[str, Any], shift: Any) -> bool:
             capacity = shift.capacity or 5
             if unit["size"] > capacity:
                 return False
@@ -617,27 +657,46 @@ def generate_shift_plan(
             )
 
         unit_available_shift_ids: Dict[str, Set[int]] = {}
+        unit_available_slot_keys: Dict[str, Set[Tuple[str, Tuple[int, int, int, int]]]] = {}
         unit_available_day_keys: Dict[str, Set[str]] = {}
         unit_available_evening_counts: Dict[str, int] = {}
+        unit_available_slot_counts: Dict[str, int] = {}
 
         for unit in planning_units:
-            available_shift_ids = set()
+            specifically_available_shift_ids = set()
+            available_slot_keys = set()
             available_day_keys = set()
-            available_evening_count = 0
+            available_evening_slots = set()
 
             for shift in active_shifts:
-                if not unit_is_available_for_shift(unit, shift):
+                if not unit_can_work_specific_shift(unit, shift):
                     continue
 
-                available_shift_ids.add(shift.id)
+                specifically_available_shift_ids.add(shift.id)
+                available_slot_keys.add(shift_slot_key[shift.id])
                 available_day_keys.add(get_shift_day_key(shift))
 
                 if is_weekend_evening_shift(shift):
-                    available_evening_count += 1
+                    available_evening_slots.add(shift_slot_key[shift.id])
+
+            available_shift_ids = {
+                shift.id
+                for shift in active_shifts
+                if shift_slot_key[shift.id] in available_slot_keys
+            }
 
             unit_available_shift_ids[unit["key"]] = available_shift_ids
+            unit_available_slot_keys[unit["key"]] = available_slot_keys
             unit_available_day_keys[unit["key"]] = available_day_keys
-            unit_available_evening_counts[unit["key"]] = available_evening_count
+            unit_available_evening_counts[unit["key"]] = len(available_evening_slots)
+            unit_available_slot_counts[unit["key"]] = len(available_slot_keys)
+
+        def unit_is_available_for_shift(unit: Dict[str, Any], shift: Any) -> bool:
+            capacity = shift.capacity or 5
+            if unit["size"] > capacity:
+                return False
+
+            return shift_slot_key[shift.id] in unit_available_slot_keys[unit["key"]]
 
         potential_unit_count = {
             shift.id: sum(
@@ -680,6 +739,8 @@ def generate_shift_plan(
             available_days = unit_available_day_keys[unit_key]
             same_day_slots = unit_day_slots[unit_key].get(day_key, [])
             candidate_slots = sorted(same_day_slots + [shift_slot_index[shift.id]])
+            location_preference = unit.get("location_preference") or "both"
+            shift_location = get_shift_location_key(shift)
 
             score = 0.0
 
@@ -687,7 +748,7 @@ def generate_shift_plan(
             score -= unit_shift_count[unit_key] * 30
 
             # Scarcer units should be placed before highly flexible ones.
-            score += max(0, 10 - len(unit_available_shift_ids[unit_key])) * 3
+            score += max(0, 10 - unit_available_slot_counts[unit_key]) * 3
 
             # Prefer spreading assignments across festival days whenever possible.
             if day_key not in assigned_days:
@@ -720,6 +781,13 @@ def generate_shift_plan(
                         score += 15
                 else:
                     score -= 35 * unit_evening_count[unit_key]
+
+            # Respect preferred location when possible without making it a hard rule.
+            if location_preference != "both" and shift_location != "both":
+                if location_preference == shift_location:
+                    score += 14
+                else:
+                    score -= 8
 
             return score
 

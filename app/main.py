@@ -2,13 +2,50 @@ import os
 import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.tracing import setup_tracing
 from app.database import engine, Base
 from app.routes import user, auth, protected, group, shift, preferences
 
-# Create database tables
+def ensure_location_preference_columns() -> None:
+    """Backfill lightweight schema changes for existing local SQLite databases."""
+    inspector = inspect(engine)
+
+    existing_tables = set(inspector.get_table_names())
+    required_columns = {
+        "users": "location_preference",
+        "groups": "location_preference",
+    }
+
+    with engine.begin() as connection:
+        for table_name, column_name in required_columns.items():
+            if table_name not in existing_tables:
+                continue
+
+            existing_columns = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            if column_name not in existing_columns:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE {table_name} "
+                        "ADD COLUMN location_preference VARCHAR DEFAULT 'both'"
+                    )
+                )
+
+            connection.execute(
+                text(
+                    f"UPDATE {table_name} "
+                    "SET location_preference = 'both' "
+                    "WHERE location_preference IS NULL"
+                )
+            )
+
+
+# Create database tables and backfill simple additive schema updates.
 Base.metadata.create_all(bind=engine)
+ensure_location_preference_columns()
 
 # Initialize FastAPI with metadata
 app = FastAPI(
