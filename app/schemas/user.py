@@ -1,5 +1,7 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr
+
+LocationPreference = Literal["both", "weinzelt", "bierwagen"]
 
 class UserBase(BaseModel):
     """Base schema with common user attributes"""
@@ -7,6 +9,7 @@ class UserBase(BaseModel):
     username: Optional[str] = None
     is_active: Optional[bool] = None
     is_coordinator: Optional[bool] = None  # Add this line
+    location_preference: Optional[LocationPreference] = "both"
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
@@ -26,6 +29,7 @@ class User(UserBase):
     is_active: bool
     is_coordinator: bool  # Add this line
     group_id: Optional[int] = None
+    location_preference: LocationPreference = "both"
 
 # Add this new schema for email lookup
 class EmailLookup(BaseModel):

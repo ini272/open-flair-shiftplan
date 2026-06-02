@@ -65,38 +65,9 @@ function formatDate(dateStr) {
   });
 }
 
-function getShiftLocationOrder(title) {
-  const normalizedTitle = title.toLowerCase();
-
-  if (normalizedTitle.includes('wein')) {
-    return 0;
-  }
-
-  if (normalizedTitle.includes('bier')) {
-    return 1;
-  }
-
-  return 2;
-}
-
-function getCompactShiftLabel(title) {
-  const normalizedTitle = title.toLowerCase();
-
-  if (normalizedTitle.includes('weinzelt')) {
-    return 'WZ';
-  }
-
-  if (normalizedTitle.includes('bierwagen')) {
-    return 'BW';
-  }
-
-  return title;
-}
-
 const ShiftGrid = ({ 
   shifts, 
   userPreferences, 
-  onTogglePreference,
   pendingOperations = {},
   onBatchDayToggle, // New prop for batch operations
   batchPendingDays = {} // New prop to track which days are being batch processed
@@ -184,26 +155,44 @@ const ShiftGrid = ({
     return pendingMap[shiftId] !== undefined;
   }, [pendingMap]);
 
-  // Handle shift click with debounce to prevent double-clicks
-  const handleShiftClick = useCallback((shiftId) => {
-    // If already pending, don't allow another click
-    if (isShiftPending(shiftId)) return;
-    
-    // Call the toggle preference function
-    onTogglePreference(shiftId);
-  }, [isShiftPending, onTogglePreference]);
+  const getSlotSelectionStatus = useCallback((slotShifts) => {
+    if (slotShifts.length === 0) {
+      return 'none';
+    }
+
+    return slotShifts.some(shift => isAvailable(shift.id)) ? 'all' : 'none';
+  }, [isAvailable]);
+
+  const handleSlotClick = useCallback((slotShifts) => {
+    if (!onBatchDayToggle || slotShifts.length === 0) {
+      return;
+    }
+
+    if (slotShifts.some(shift => isShiftPending(shift.id))) {
+      return;
+    }
+
+    const selectionStatus = getSlotSelectionStatus(slotShifts);
+    const shouldSelect = selectionStatus === 'none';
+
+    onBatchDayToggle(slotShifts, shouldSelect);
+  }, [getSlotSelectionStatus, isShiftPending, onBatchDayToggle]);
 
   // Get day selection status for batch button styling
   const getDaySelectionStatus = useCallback((day) => {
     const dayShifts = shiftsByDay[day] || [];
     if (dayShifts.length === 0) return 'none';
-    
-    const selectedCount = dayShifts.filter(shift => isAvailable(shift.id)).length;
-    
-    if (selectedCount === 0) return 'none';
-    if (selectedCount === dayShifts.length) return 'all';
+
+    const slotStatuses = timeSlots
+      .map(timeSlot => findShifts(day, timeSlot))
+      .filter(slotShifts => slotShifts.length > 0)
+      .map(slotShifts => getSlotSelectionStatus(slotShifts));
+
+    if (slotStatuses.length === 0) return 'none';
+    if (slotStatuses.every(status => status === 'all')) return 'all';
+    if (slotStatuses.every(status => status === 'none')) return 'none';
     return 'partial';
-  }, [shiftsByDay, isAvailable]);
+  }, [findShifts, getSlotSelectionStatus, shiftsByDay, timeSlots]);
 
   // Handle batch day toggle
   const handleBatchDayToggle = useCallback((day) => {
@@ -217,12 +206,6 @@ const ShiftGrid = ({
     
     onBatchDayToggle(dayShifts, shouldSelect);
   }, [shiftsByDay, getDaySelectionStatus, onBatchDayToggle]);
-
-  const sortShiftsByLocation = useCallback((cellShifts) => {
-    return [...cellShifts].sort((a, b) => (
-      getShiftLocationOrder(a.title) - getShiftLocationOrder(b.title)
-    ));
-  }, []);
 
   return (
     <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
@@ -274,59 +257,46 @@ const ShiftGrid = ({
               <TableCell sx={{ backgroundColor: '#fafafa' }}>{timeSlot}</TableCell>
               {days.map(day => {
                 const cellShifts = findShifts(day, timeSlot);
-                const orderedShifts = sortShiftsByLocation(cellShifts);
+                const selectionStatus = getSlotSelectionStatus(cellShifts);
+                const available = selectionStatus === 'all';
+                const isPending = cellShifts.some(shift => isShiftPending(shift.id));
                 
                 return (
                   <TableCell key={`${day}-${timeSlot}`} align="center" sx={{ padding: 1 }}>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: orderedShifts.length > 1
-                          ? 'repeat(2, minmax(0, 1fr))'
-                          : 'minmax(0, 1fr)',
-                        gap: 1,
-                        alignItems: 'stretch'
-                      }}
-                    >
-                      {orderedShifts.map(shift => {
-                        const available = isAvailable(shift.id);
-                        const isPending = isShiftPending(shift.id);
-                        
-                        return (
-                          <ShiftCell
-                            key={shift.id}
-                            selected={available}
-                            isPending={isPending}
-                            onClick={() => handleShiftClick(shift.id)}
-                          >
-                            <Box
-                              component="span"
-                              sx={{
-                                minWidth: 0,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                fontSize: '0.86rem',
-                                fontWeight: 600
-                              }}
-                            >
-                              {getCompactShiftLabel(shift.title)}
-                            </Box>
-                            {isPending ? (
-                              <CircularProgress 
-                                size={16} 
-                                thickness={5} 
-                                sx={{ ml: 1 }} 
-                              />
-                            ) : (
-                              available ? 
-                                <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
-                                <CloseIcon fontSize="small" sx={{ ml: 1 }} />
-                            )}
-                          </ShiftCell>
-                        );
-                      })}
-                    </Box>
+                    {cellShifts.length > 0 ? (
+                      <ShiftCell
+                        selected={available}
+                        isPending={isPending}
+                        onClick={() => handleSlotClick(cellShifts)}
+                      >
+                        <Box
+                          component="span"
+                          sx={{
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.86rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          {available
+                            ? translations.grid.slotAvailable
+                            : translations.grid.slotUnavailable}
+                        </Box>
+                        {isPending ? (
+                          <CircularProgress 
+                            size={16} 
+                            thickness={5} 
+                            sx={{ ml: 1 }} 
+                          />
+                        ) : (
+                          available ? 
+                            <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
+                            <CloseIcon fontSize="small" sx={{ ml: 1 }} />
+                        )}
+                      </ShiftCell>
+                    ) : null}
                   </TableCell>
                 );
               })}

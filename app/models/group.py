@@ -18,6 +18,7 @@ class Group(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     is_active = Column(Boolean, default=True)
+    location_preference = Column(String, default="both", nullable=False)
     
     # Define the relationship to users
     # This creates the link but the actual foreign key is in the User model

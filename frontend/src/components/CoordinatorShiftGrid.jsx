@@ -206,8 +206,19 @@ const formatTime = (dateTimeStr) => {
   });
 };
 
-const formatDayTabLabel = (dateStr) => {
-  const date = new Date(dateStr);
+const getPlannerDayDate = (dateTimeStr) => {
+  const date = new Date(dateTimeStr);
+
+  // Treat after-midnight shifts as part of the previous festival night.
+  if (date.getHours() < 6) {
+    date.setDate(date.getDate() - 1);
+  }
+
+  return date;
+};
+
+const formatDayTabLabel = (dateValue) => {
+  const date = new Date(dateValue);
   return date.toLocaleDateString('de-DE', {
     weekday: 'short',
     day: 'numeric',
@@ -215,8 +226,8 @@ const formatDayTabLabel = (dateStr) => {
   });
 };
 
-const formatPrintDayLabel = (dateStr) => {
-  const date = new Date(dateStr);
+const formatPrintDayLabel = (dateValue) => {
+  const date = new Date(dateValue);
   return date.toLocaleDateString('de-DE', {
     weekday: 'long',
     day: '2-digit',
@@ -447,7 +458,8 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
 
     shiftsWithAssignments.forEach((shift) => {
       const locationInfo = getLocationInfo(shift.title);
-      const dayKey = new Date(shift.start_time).toDateString();
+      const plannerDayDate = getPlannerDayDate(shift.start_time);
+      const dayKey = plannerDayDate.toDateString();
       const timeLabel = `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)}`;
 
       locationMap[locationInfo.key] = locationInfo;
@@ -455,7 +467,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
       if (!grouped[dayKey]) {
         grouped[dayKey] = {
           dayKey,
-          dayDate: shift.start_time,
+          dayDate: plannerDayDate.toISOString(),
           slots: {}
         };
       }

@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+from app.routes.shift import get_shift_day_key, is_weekend_evening_shift
 
 def test_set_preference(authenticated_client):
     """Test setting a user preference for a shift."""
@@ -399,3 +402,20 @@ def test_generate_shift_plan_shares_weekend_evenings(authenticated_client):
 
     assert len(evening_assignments) == 2
     assert {assignment["user_id"] for assignment in evening_assignments} == {user_id1, user_id2}
+
+
+def test_late_night_shifts_belong_to_previous_festival_night():
+    """00:00-02:00 should count as the previous festival night for planner scoring."""
+    friday_night_extension = SimpleNamespace(
+        start_time=datetime(2026, 8, 8, 0, 0),
+        end_time=datetime(2026, 8, 8, 2, 0),
+    )
+    saturday_night_extension = SimpleNamespace(
+        start_time=datetime(2026, 8, 9, 0, 0),
+        end_time=datetime(2026, 8, 9, 2, 0),
+    )
+
+    assert get_shift_day_key(friday_night_extension) == "2026-08-07"
+    assert get_shift_day_key(saturday_night_extension) == "2026-08-08"
+    assert is_weekend_evening_shift(friday_night_extension) is True
+    assert is_weekend_evening_shift(saturday_night_extension) is True

@@ -1,12 +1,15 @@
-from typing import Optional, List
+from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.user import User
+
+LocationPreference = Literal["both", "weinzelt", "bierwagen"]
 
 class GroupBase(BaseModel):
     """Base schema with common group attributes"""
     name: Optional[str] = None
     is_active: Optional[bool] = None
+    location_preference: Optional[LocationPreference] = "both"
 
 class GroupCreate(GroupBase):
     """Schema for creating a group"""
@@ -23,6 +26,7 @@ class Group(GroupBase):
     id: int
     name: str
     is_active: bool
+    location_preference: LocationPreference = "both"
 
 class GroupWithUsers(Group):
     """Schema for returning group data with its users"""
