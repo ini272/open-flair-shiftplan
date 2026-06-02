@@ -144,17 +144,17 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python create_production_shifts.py --token abc123
-  python create_production_shifts.py --token abc123 --clear-existing
-  python create_production_shifts.py --token abc123 --schedule custom_schedule.yaml
-  python create_production_shifts.py --token abc123 --api-url http://localhost:8001
+  python create_production_shifts.py --access-code zelt-plan-regen-48
+  python create_production_shifts.py --access-code zelt-plan-regen-48 --clear-existing
+  python create_production_shifts.py --access-code zelt-plan-regen-48 --schedule custom_schedule.yaml
+  python create_production_shifts.py --access-code zelt-plan-regen-48 --api-url http://localhost:8001
         """
     )
     
     parser.add_argument(
-        '--token', '-t',
-        required=True,
-        help='Authentication token for API access (required)'
+        '--access-code', '-a',
+        default=os.getenv("COORDINATOR_CODE") or os.getenv("OPEN_FLAIR_COORDINATOR_CODE"),
+        help='Coordinator access code for API access (or set COORDINATOR_CODE)'
     )
     
     parser.add_argument(
@@ -174,7 +174,10 @@ Examples:
         help='Clear all existing shifts before creating new ones'
     )
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.access_code:
+        parser.error("--access-code is required unless COORDINATOR_CODE is set")
+    return args
 
 def main():
     """Main function to create festival shifts."""
@@ -196,16 +199,24 @@ def main():
     # Load the schedule
     schedule_data = load_schedule(yaml_file)
     
-    # Login with token
+    # Login with coordinator access code
     session = requests.Session()
     print(f"Logging in to {args.api_url}...")
-    response = session.get(f"{args.api_url}/auth/login/{args.token}")
+    response = session.post(
+        f"{args.api_url}/auth/login",
+        json={"access_code": args.access_code},
+    )
     
     if response.status_code != 200:
         print(f"❌ Login failed: {response.text}")
         print("Make sure:")
         print(f"1. The FastAPI server is running on {args.api_url}")
-        print("2. The token is valid")
+        print("2. The coordinator access code is valid")
+        sys.exit(1)
+
+    login_data = response.json()
+    if login_data.get("role") != "coordinator":
+        print("❌ Login succeeded, but the access code is not a coordinator code")
         sys.exit(1)
     
     print("✅ Logged in successfully")

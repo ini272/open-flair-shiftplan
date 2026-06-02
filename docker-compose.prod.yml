@@ -12,6 +12,10 @@ services:
     environment:
       - DATABASE_URL=sqlite:///./data/sql_app.db  # Database in persistent location
       - NODE_ENV=production
+      - EVENT_CODE=${EVENT_CODE:?Set EVENT_CODE for participant registration}
+      - COORDINATOR_CODE=${COORDINATOR_CODE:?Set COORDINATOR_CODE for coordinator access}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:?Set SESSION_SECRET_KEY for signed cookies}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
     restart: unless-stopped
 
   frontend:

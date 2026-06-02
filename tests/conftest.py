@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import uuid
 import os
 import sys
 import pytest
@@ -14,7 +13,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Now import the app
 from app.main import app
 from app.database import Base, get_db
-from app.models.token import AccessToken
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -50,27 +48,21 @@ def client(db):
         yield c
     app.dependency_overrides.clear()
 
-# Add these fixtures at the end of the file
 @pytest.fixture(scope="function")
-def test_token(db):
-    """Create a test token for authentication."""
-    token_value = str(uuid.uuid4())
-    token = AccessToken(
-        name="Test Token",
-        token=token_value,
-        created_at=datetime.utcnow(),
-        expires_at=datetime.utcnow() + timedelta(days=1),
-        is_active=True
-    )
-    db.add(token)
-    db.commit()
-    db.refresh(token)
-    return token_value
+def authenticated_client(client):
+    """Create a client with coordinator access."""
+    response = client.post("/auth/login", json={"access_code": "koordination2026"})
+    assert response.status_code == 200
+    assert response.json()["role"] == "coordinator"
+    return client
+
 
 @pytest.fixture(scope="function")
-def authenticated_client(client, test_token):
-    """Create a client that's already authenticated."""
-    client.cookies.set("access_token", test_token)
+def participant_client(client):
+    """Create a client with participant access."""
+    response = client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    assert response.status_code == 200
+    assert response.json()["role"] == "participant"
     return client
 
 @pytest.fixture(scope="function")

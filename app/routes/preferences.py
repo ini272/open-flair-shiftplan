@@ -2,9 +2,10 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_tracer, get_db, require_auth
+from app.dependencies import ensure_self_or_coordinator, get_tracer, get_db, require_auth, require_coordinator
 from app.crud.preferences import preference as preference_crud
 from app.schemas.preferences import PreferenceCreate, PreferenceResponse
+from app.security import AuthSession
 
 # Create a router for preference-related endpoints
 router = APIRouter(
@@ -20,7 +21,8 @@ tracer = get_tracer()
 @router.post("/", response_model=PreferenceResponse)
 def set_preference(
     preference_in: PreferenceCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Set a user's preference for a shift.
@@ -29,6 +31,8 @@ def set_preference(
         span.set_attribute("user.id", preference_in.user_id)
         span.set_attribute("shift.id", preference_in.shift_id)
         span.set_attribute("can_work", preference_in.can_work)
+
+        ensure_self_or_coordinator(auth_session, preference_in.user_id)
         
         success = preference_crud.set_preference(
             db, 
@@ -53,13 +57,16 @@ def set_preference(
 @router.get("/users/{user_id}", response_model=List[PreferenceResponse])
 def get_user_preferences(
     user_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Get all preferences for a user.
     """
     with tracer.start_as_current_span("get-user-preferences") as span:
         span.set_attribute("user.id", user_id)
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         preferences = preference_crud.get_preferences(db, user_id=user_id)
         
@@ -70,7 +77,8 @@ def get_user_preferences(
 def get_users_for_shift(
     shift_id: int,
     can_work: bool = True,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Get all users who can/cannot work a shift.

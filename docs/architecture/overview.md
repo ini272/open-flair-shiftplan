@@ -4,10 +4,10 @@ The application is intentionally small:
 
 - FastAPI serves the JSON API.
 - React serves the member and coordinator UI.
-- SQLite stores users, groups, shifts, tokens, assignments, and opt-outs.
+- SQLite stores users, groups, shifts, assignments, and opt-outs.
 - Nginx serves the frontend and proxies API routes in production compose.
 
-The active deployment path is a home server or local LAN. Public DNS, HTTPS automation, and external tracing can be revisited later if the pilot needs them.
+The active deployment path is a home server or small VPS behind HTTPS. Public indexing is discouraged through robots/noindex headers.
 
 ## Data Flow
 
@@ -18,10 +18,10 @@ sequenceDiagram
     participant API
     participant DB as SQLite
 
-    Member->>Frontend: Open token link
-    Frontend->>API: Login with token
-    API->>DB: Validate access token
-    API->>Frontend: Set HTTP-only cookie
+    Member->>Frontend: Enter event access code
+    Frontend->>API: POST /auth/login
+    API->>API: Validate configured event code
+    API->>Frontend: Set signed HTTP-only cookie
     Member->>Frontend: Create or select account
     Frontend->>API: Save account/group/opt-outs
     API->>DB: Persist planning data
@@ -36,6 +36,9 @@ sequenceDiagram
     participant API
     participant DB as SQLite
 
+    Coordinator->>Frontend: Enter coordinator access code
+    Frontend->>API: POST /auth/login
+    API->>Frontend: Set signed coordinator session cookie
     Coordinator->>Frontend: Open coordinator dashboard
     Frontend->>API: Load shifts, users, opt-outs
     Coordinator->>Frontend: Generate plan
@@ -49,4 +52,4 @@ sequenceDiagram
 
 - The old external tracing experiment has been removed from active code.
 - The old public DNS and certificate config has been removed from active compose/Nginx config.
-- Authorization hardening is still required before exposing real data beyond a trusted network.
+- Coordinator-only backend authorization is required for user lists, shift creation, assignment changes, and plan generation.

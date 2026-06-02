@@ -1,31 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TextField, Button, Alert, Box, Typography, CircularProgress } from '@mui/material';
 import { authService } from '../services/api';
 import { translations } from '../utils/translations';
 
-const Login = ({ tokenFromUrl, onLoginSuccess }) => {
-  const [token, setToken] = useState(tokenFromUrl || '');
+const Login = ({ onLoginSuccess }) => {
+  const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Auto-login effect when component mounts with URL token
-  useEffect(() => {
-    if (tokenFromUrl) {
-      setLoading(true);
-      attemptLogin(tokenFromUrl);
-    }
-  }, [tokenFromUrl]);
-
-  const attemptLogin = async (tokenValue) => {
+  const attemptLogin = async (accessCodeValue) => {
     try {
-      await authService.login(tokenValue);
+      await authService.login(accessCodeValue);
       if (onLoginSuccess) {
         onLoginSuccess();
       }
     } catch (error) {
       console.error('Login failed:', error);
-      setError(translations.auth.invalidToken);
-      setToken(tokenValue); // Keep the token in the field for manual retry
+      setError(translations.auth.invalidAccessCode);
+      setAccessCode(accessCodeValue);
     } finally {
       setLoading(false);
     }
@@ -35,26 +27,14 @@ const Login = ({ tokenFromUrl, onLoginSuccess }) => {
     e.preventDefault();
     setError('');
     
-    if (!token.trim()) {
-      setError(translations.auth.enterToken);
+    if (!accessCode.trim()) {
+      setError(translations.auth.enterAccessCode);
       return;
     }
     
     setLoading(true);
-    await attemptLogin(token);
+    await attemptLogin(accessCode);
   };
-
-  // Show loading message during auto-login
-  if (loading && tokenFromUrl && !error) {
-    return (
-      <Box sx={{ textAlign: 'center', py: 4 }}>
-        <CircularProgress size={40} sx={{ mb: 2 }} />
-        <Typography variant="h6">
-          {translations.auth.loggingIn}
-        </Typography>
-      </Box>
-    );
-  }
 
   return (
     <Box>
@@ -70,15 +50,15 @@ const Login = ({ tokenFromUrl, onLoginSuccess }) => {
       
       <Box component="form" onSubmit={handleSubmit}>
         <TextField
-          label={translations.auth.accessToken}
-          placeholder={translations.auth.tokenPlaceholder}
+          label={translations.auth.accessCode}
+          placeholder={translations.auth.accessCodePlaceholder}
           fullWidth
           margin="normal"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
+          value={accessCode}
+          onChange={(e) => setAccessCode(e.target.value)}
           required
           disabled={loading}
-          helperText={translations.auth.tokenHelp}
+          helperText={translations.auth.accessCodeHelp}
         />
         
         <Button

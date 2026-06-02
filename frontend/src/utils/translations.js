@@ -118,14 +118,14 @@ export const translations = {
   // Authentication
   auth: {
     login: 'Anmelden',
-    accessToken: 'Zugangs-Token',
-    enterToken: 'Bitte gib einen Token ein',
-    invalidToken: 'Ungültiger oder abgelaufener Token',
+    accessCode: 'Zugangscode',
+    enterAccessCode: 'Bitte gib den Zugangscode ein',
+    invalidAccessCode: 'Ungültiger Zugangscode',
     checking: 'Wird überprüft...',
-    tokenPlaceholder: 'Gib deinen Zugangs-Token ein',
-    tokenHelp: 'Den Token erhältst du von der Koordination.',
+    accessCodePlaceholder: 'Gib den Zugangscode ein',
+    accessCodeHelp: 'Den Zugangscode erhältst du von der Koordination.',
     loggingIn: 'Anmeldung läuft...',
-    validatingToken: 'Token wird überprüft...'
+    validatingAccessCode: 'Zugangscode wird überprüft...'
   },
   
   // Messages & Status

@@ -1,11 +1,12 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Cookie
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_tracer
+from app.dependencies import ensure_self_or_coordinator, get_tracer, require_auth, require_coordinator
 from app.database import get_db
 from app.schemas.user import User, UserCreate, UserUpdate, EmailLookup
 from app.crud.user import user as user_crud
+from app.security import AuthSession, set_auth_session_cookie
 
 # Create a router for user-related endpoints
 router = APIRouter(
@@ -21,7 +22,9 @@ tracer = get_tracer()
 @router.post("/lookup", response_model=User)
 def lookup_user_by_email(
     email_data: EmailLookup,
-    db: Session = Depends(get_db)
+    response: Response,
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Look up a user by email address.
@@ -33,6 +36,12 @@ def lookup_user_by_email(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        if user.is_coordinator and not auth_session.is_coordinator:
+            span.set_attribute("error", "Coordinator lookup requires coordinator session")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        set_auth_session_cookie(response, role=auth_session.role, user_id=user.id)
         
         span.set_attribute("user.id", user.id)
         span.set_attribute("user.username", user.username)
@@ -40,9 +49,10 @@ def lookup_user_by_email(
 
 @router.post("/", response_model=User, status_code=status.HTTP_201_CREATED)
 def create_user(
-    user_in: UserCreate, 
+    user_in: UserCreate,
+    response: Response,
     db: Session = Depends(get_db),
-    access_token: Optional[str] = Cookie(None)  # Add this line
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Create a new user.
@@ -55,15 +65,10 @@ def create_user(
         # Add event: Starting user creation process
         span.add_event("starting_user_creation")
         
-        # Check if registering with coordinator token
-        is_coordinator = False
-        if access_token:
-            from app.crud.token import token as token_crud
-            token_obj = token_crud.get_by_token(db, token=access_token)
-            if token_obj and token_obj.is_coordinator_token:
-                is_coordinator = True
-                span.add_event("registering_with_coordinator_token")
-                span.set_attribute("user.will_be_coordinator", True)
+        is_coordinator = auth_session.is_coordinator
+        if is_coordinator:
+            span.add_event("registering_with_coordinator_access_code")
+            span.set_attribute("user.will_be_coordinator", True)
         
         # Check if email is already registered
         span.add_event("checking_email_uniqueness")
@@ -93,7 +98,7 @@ def create_user(
         span.add_event("creating_user_in_database")
         user = user_crud.create(db=db, obj_in=user_in)
         
-        # Grant coordinator privileges if registering with coordinator token
+        # Grant coordinator privileges if registering with the coordinator access code.
         if is_coordinator:
             user.is_coordinator = True
             db.commit()
@@ -101,6 +106,8 @@ def create_user(
             span.add_event("coordinator_privileges_granted", {
                 "user_id": user.id
             })
+
+        set_auth_session_cookie(response, role=auth_session.role, user_id=user.id)
         
         span.add_event("user_created_successfully", {
             "user_id": user.id,
@@ -112,7 +119,8 @@ def create_user(
 def read_users(
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Get a list of users with pagination.
@@ -130,7 +138,11 @@ def read_users(
         return users
 
 @router.get("/{user_id}", response_model=User)
-def read_user(user_id: int, db: Session = Depends(get_db)) -> Any:
+def read_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
+) -> Any:
     """
     Get a specific user by ID.
     """
@@ -145,13 +157,16 @@ def read_user(user_id: int, db: Session = Depends(get_db)) -> Any:
         if db_user is None:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         return db_user
 
 @router.put("/{user_id}", response_model=User)
 def update_user(
     user_id: int, 
     user_in: UserUpdate, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Update a user's information.
@@ -165,12 +180,18 @@ def update_user(
         if db_user is None:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Update the user
         return user_crud.update(db=db, db_obj=db_user, obj_in=user_in)
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, db: Session = Depends(get_db)) -> None:  # Change return type to None
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
+) -> None:
     """
     Delete a user.
     """
@@ -183,6 +204,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)) -> None:  # Change 
         if db_user is None:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Delete the user
         user_crud.remove(db=db, id=user_id)

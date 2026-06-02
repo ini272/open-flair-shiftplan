@@ -1,206 +1,103 @@
-from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
-from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Any, Optional
 
-from app.dependencies import get_tracer, get_db
-from app.crud.token import token as token_crud
-from app.schemas.token import TokenCreate, TokenResponse
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-# Create a router for authentication endpoints
+from app.dependencies import get_auth_session, get_tracer
+from app.schemas.auth import AuthCheckResponse, LoginRequest, LoginResponse
+from app.security import AuthSession, clear_auth_session_cookie, get_role_for_access_code, set_auth_session_cookie
+
+
 router = APIRouter(
     prefix="/auth",
     tags=["authentication"],
     responses={404: {"description": "Not found"}},
 )
 
-# Get the tracer for this module
 tracer = get_tracer()
 
-@router.post("/tokens", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def create_token(
-    token_data: TokenCreate,
-    db: Session = Depends(get_db)
-) -> Any:
-    """
-    Create a new access token.
-    """
-    with tracer.start_as_current_span("create-token") as span:
-        span.set_attribute("token.name", token_data.name)
-        span.set_attribute("token.is_coordinator", token_data.is_coordinator_token)  # Add this line
-        if token_data.expires_in_days:
-            span.set_attribute("token.expires_in_days", token_data.expires_in_days)
-        
-        # Create token
-        token_obj = token_crud.create_token(
-            db, 
-            name=token_data.name,
-            expires_in_days=token_data.expires_in_days,
-            is_coordinator_token=token_data.is_coordinator_token  # Add this line
-        )
-        
-        span.set_attribute("token.id", token_obj.id)
-        return token_obj
 
-@router.get("/tokens", response_model=List[TokenResponse])
-def list_tokens(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-) -> Any:
-    """
-    List all active tokens.
-    """
-    with tracer.start_as_current_span("get-tokens") as span:
-        span.set_attribute("query.skip", skip)
-        span.set_attribute("query.limit", limit)
-        
-        span.add_event("listing_tokens_started")
-        
-        # Add timing for the database operation
-        import time
-        db_start = time.time()
-        
-        span.add_event("database_query_started", {
-            "operation": "get_active_tokens",
-            "skip": skip,
-            "limit": limit
-        })
-        
-        tokens = token_crud.get_active_tokens(db, skip=skip, limit=limit)
-        
-        db_time = time.time() - db_start
-        span.add_event("database_query_completed", {
-            "execution_time_ms": db_time * 1000,
-            "result_count": len(tokens)
-        })
-        
-        # Add DB operation details to the span
-        span.set_attribute("db.execution_time_ms", db_time * 1000)
-        span.set_attribute("result.count", len(tokens))
-        
-        span.add_event("listing_tokens_completed")
-        return tokens
-@router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
-def invalidate_token(
-    token_id: int,
-    db: Session = Depends(get_db)
-) -> None:  # Changed return type to None
-    """
-    Invalidate a token.
-    """
-    with tracer.start_as_current_span("invalidate-token") as span:
-        span.set_attribute("token.id", token_id)
-        
-        # Get the token from the database
-        token_obj = token_crud.get(db, id=token_id)
-        if token_obj is None:
-            span.set_attribute("error", "Token not found")
-            raise HTTPException(status_code=404, detail="Token not found")
-        
-        # Invalidate the token
-        token_crud.invalidate(db, token_obj=token_obj)
-        # Don't return anything for 204 response
-
-@router.get("/login/{token}")
-def login_with_token(
-    token: str,
+@router.post("/login", response_model=LoginResponse)
+def login_with_access_code(
+    login_data: LoginRequest,
     response: Response,
-    db: Session = Depends(get_db)
 ) -> Any:
     """
-    Login with an access token.
+    Login with the shared event code or the separate coordinator code.
     """
-    with tracer.start_as_current_span("login-with-token") as span:
-        # We don't log the actual token for security reasons
+    with tracer.start_as_current_span("login-with-access-code") as span:
         span.set_attribute("login.attempt", True)
-        
-        span.add_event("login_attempt_started")
-        
-        # Validate token and get token object
-        span.add_event("validating_token")
-        token_obj = token_crud.get_by_token(db, token=token)
-        if not token_obj or not token_obj.is_valid:
-            span.add_event("token_validation_failed")
-            span.set_attribute("error", "Invalid or expired token")
+
+        role = get_role_for_access_code(login_data.access_code)
+        if role is None:
+            span.add_event("access_code_validation_failed")
+            span.set_attribute("error", "Invalid access code")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid access code",
             )
-        
-        span.add_event("token_validated_successfully")
-        
-        # Set a cookie with the token
-        span.add_event("setting_auth_cookie")
-        response.set_cookie(
-            key="access_token",
-            value=token,
-            httponly=True,
-            max_age=3600 * 24 * 30,  # 30 days
-            path="/"
-        )
-        
-        span.add_event("login_completed_successfully")
+
+        set_auth_session_cookie(response, role=role)
+
+        span.add_event("access_code_validated_successfully")
         span.set_attribute("login.success", True)
+        span.set_attribute("login.role", role)
         return {
-            "message": "Login successful"
+            "authenticated": True,
+            "role": role,
+            "user_id": None,
+            "message": "Login successful",
         }
+
+
 @router.get("/logout")
 def logout(response: Response) -> Any:
     """
-    Logout by clearing the token cookie.
+    Logout by clearing the signed session cookie.
     """
     with tracer.start_as_current_span("logout") as span:
-        response.delete_cookie(key="access_token", path="/")
+        clear_auth_session_cookie(response)
         span.set_attribute("logout.success", True)
         return {"message": "Logout successful"}
 
-@router.get("/check")
+
+@router.get("/check", response_model=AuthCheckResponse)
 def check_auth(
-    access_token: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
+    auth_session: Optional[AuthSession] = Depends(get_auth_session),
 ) -> Any:
     """
-    Check if the current user is authenticated.
+    Check if the current browser has a valid signed access-code session.
     """
     with tracer.start_as_current_span("check-auth") as span:
-        if not access_token:
-            span.set_attribute("auth.status", "no_token")
-            return {"authenticated": False}
-        
-        is_valid = token_crud.validate_token(db, token=access_token)
-        span.set_attribute("auth.status", "valid" if is_valid else "invalid")
-        return {"authenticated": is_valid}
+        if not auth_session:
+            span.set_attribute("auth.status", "no_session")
+            return {"authenticated": False, "role": None, "user_id": None}
 
-@router.get("/token/{token}")
-def login_with_token_url(
-    token: str,
-    db: Session = Depends(get_db)
-) -> Any:
-    """
-    Login with an access token via URL path.
-    Returns validation result for frontend to handle.
-    """
-    with tracer.start_as_current_span("login-with-token-url") as span:
-        span.set_attribute("login.attempt", True)
-        
-        span.add_event("validating_token_from_url")
-        
-        # Validate token
-        is_valid = token_crud.validate_token(db, token=token)
-        if not is_valid:
-            span.add_event("token_validation_failed")
-            span.set_attribute("error", "Invalid or expired token")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-        
-        span.add_event("token_validated_successfully")
-        span.set_attribute("login.success", True)
-        
+        span.set_attribute("auth.status", "valid")
+        span.set_attribute("auth.role", auth_session.role)
         return {
-            "message": "Token valid",
-            "token": token,
-            "valid": True
+            "authenticated": True,
+            "role": auth_session.role,
+            "user_id": auth_session.user_id,
         }
+
+
+@router.get("/login/{_legacy_token}", status_code=status.HTTP_410_GONE)
+def legacy_login_with_token(_legacy_token: str) -> Any:
+    """
+    Token login links are intentionally retired.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Token login links are no longer supported. Please use the event access code.",
+    )
+
+
+@router.get("/token/{_legacy_token}", status_code=status.HTTP_410_GONE)
+def legacy_validate_token(_legacy_token: str) -> Any:
+    """
+    Token validation links are intentionally retired.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Token login links are no longer supported. Please use the event access code.",
+    )

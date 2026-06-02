@@ -86,10 +86,22 @@ const DashboardPage = () => {
           navigate('/login');
           return;
         }
+        const authRole = authResponse.data.role;
+        const sessionUserId = authResponse.data.user_id;
 
         // Get user data
-        const userId = localStorage.getItem('user_id');
+        const storedUserId = localStorage.getItem('user_id');
+        const userId = sessionUserId || storedUserId;
         if (!userId) {
+          localStorage.removeItem('user_id');
+          localStorage.removeItem('username');
+          navigate('/access');
+          return;
+        }
+
+        if (!sessionUserId && storedUserId) {
+          localStorage.removeItem('user_id');
+          localStorage.removeItem('username');
           navigate('/access');
           return;
         }
@@ -97,12 +109,16 @@ const DashboardPage = () => {
         const userResponse = await userService.getUser(userId);
         setUser(userResponse.data);
 
-        // Check coordinator status from user data
-        setIsCoordinator(userResponse.data.is_coordinator || false);
+        // Coordinator capabilities require both the coordinator account and coordinator session.
+        const hasCoordinatorAccess = authRole === 'coordinator' && Boolean(userResponse.data.is_coordinator);
+        setIsCoordinator(hasCoordinatorAccess);
 
-        // Get all users (for coordinator view)
-        const allUsersResponse = await userService.getUsers();
-        setAllUsers(allUsersResponse.data);
+        if (hasCoordinatorAccess) {
+          const allUsersResponse = await userService.getUsers();
+          setAllUsers(allUsersResponse.data);
+        } else {
+          setAllUsers([]);
+        }
 
         // Get all shifts
         const allShiftsResponse = await shiftService.getShifts();

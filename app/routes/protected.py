@@ -1,7 +1,7 @@
 from typing import Any
 from fastapi import APIRouter, Depends
 
-from app.dependencies import get_tracer, require_auth
+from app.dependencies import get_tracer, require_auth, require_coordinator
 
 # Create a router for protected endpoints
 router = APIRouter(
@@ -22,7 +22,7 @@ def protected_route() -> Any:
     with tracer.start_as_current_span("protected-route") as span:
         return {"message": "This is a protected route"}
 
-@router.get("/admin")
+@router.get("/admin", dependencies=[Depends(require_coordinator)])
 def admin_route() -> Any:
     """
     Another protected route.

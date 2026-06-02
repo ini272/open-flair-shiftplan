@@ -2,11 +2,12 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_tracer, get_db
+from app.dependencies import ensure_self_or_coordinator, get_tracer, get_db, require_auth, require_coordinator
 from app.schemas.group import Group, GroupCreate, GroupUpdate, GroupWithUsers
 from app.schemas.user import User
 from app.crud.group import group as group_crud
 from app.crud.user import user as user_crud
+from app.security import AuthSession
 
 # Create a router for group-related endpoints
 router = APIRouter(
@@ -21,7 +22,8 @@ tracer = get_tracer()
 @router.post("/", response_model=Group, status_code=status.HTTP_201_CREATED)
 def create_group(
     group_in: GroupCreate, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Create a new group.
@@ -58,7 +60,8 @@ def create_group(
 def read_groups(
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Get a list of groups with pagination.
@@ -74,7 +77,8 @@ def read_groups(
 @router.get("/{group_id}", response_model=GroupWithUsers)
 def read_group(
     group_id: int, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Get a specific group by ID, including its users.
@@ -92,7 +96,8 @@ def read_group(
 def update_group(
     group_id: int, 
     group_in: GroupUpdate, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Update a group.
@@ -120,7 +125,8 @@ def update_group(
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_group(
     group_id: int, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> None:
     """
     Delete a group.
@@ -140,7 +146,8 @@ def add_user_to_group(
     group_id: int,
     user_id: int,
     max_group_size: int = 4,  # Add this parameter
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Add a user to a group.
@@ -167,6 +174,8 @@ def add_user_to_group(
             span.add_event("user_not_found", {"user_id": user_id})
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Check if group has space
         span.add_event("checking_group_capacity")
@@ -203,7 +212,8 @@ def add_user_to_group(
 @router.delete("/users/{user_id}", response_model=User)
 def remove_user_from_group(
     user_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Remove a user from their group.
@@ -216,6 +226,8 @@ def remove_user_from_group(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Check if user is in a group
         if user.group_id is None:

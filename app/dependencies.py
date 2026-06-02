@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.crud.token import token as token_crud
+from app.crud.user import user as user_crud
+from app.crud.group import group as group_crud
+from app.security import AuthSession, SESSION_COOKIE_NAME, read_auth_session
 from app.tracing import NoopTracer
 
 def get_tracer():
@@ -15,35 +17,75 @@ def get_tracer():
     """
     return NoopTracer()
 
+def get_auth_session(
+    session_cookie: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
+) -> Optional[AuthSession]:
+    return read_auth_session(session_cookie)
+
+
 def require_auth(
-    access_token: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
-):
+    auth_session: Optional[AuthSession] = Depends(get_auth_session),
+) -> AuthSession:
     """
-    Dependency to require authentication.
-    Raises an exception if the user is not authenticated.
-    
-    Args:
-        access_token: The token cookie from the request
-        db: Database session
-        
-    Returns:
-        True if authenticated
-        
-    Raises:
-        HTTPException: If not authenticated
+    Require a valid signed access-code session.
     """
-    if not access_token:
+    if not auth_session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
         )
-    
-    is_valid = token_crud.validate_token(db, token=access_token)
-    if not is_valid:
+
+    return auth_session
+
+
+def require_coordinator(
+    auth_session: AuthSession = Depends(require_auth),
+) -> AuthSession:
+    """
+    Require that the current session was created with the coordinator access code.
+    """
+    if not auth_session.is_coordinator:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Coordinator access required",
         )
-    
-    return True
+
+    return auth_session
+
+
+def ensure_self_or_coordinator(auth_session: AuthSession, user_id: int) -> None:
+    if auth_session.is_coordinator or auth_session.user_id == user_id:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not allowed for this user",
+    )
+
+
+def ensure_group_member_or_coordinator(
+    db: Session,
+    auth_session: AuthSession,
+    group_id: int,
+) -> None:
+    if auth_session.is_coordinator:
+        return
+
+    if auth_session.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed for this group",
+        )
+
+    current_user = user_crud.get(db, id=auth_session.user_id)
+    if current_user and current_user.group_id == group_id:
+        return
+
+    group = group_crud.get(db, id=group_id)
+    if group and any(user.id == auth_session.user_id for user in group.users):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not allowed for this group",
+    )

@@ -4,7 +4,7 @@ import os
 
 # Configuration
 API_URL = "http://localhost:8000"
-TOKEN = os.getenv("OPEN_FLAIR_ACCESS_TOKEN")
+ACCESS_CODE = os.getenv("COORDINATOR_CODE") or os.getenv("OPEN_FLAIR_COORDINATOR_CODE")
 FESTIVAL_START = datetime.datetime(2026, 8, 5)
 FESTIVAL_END = datetime.datetime(2026, 8, 10)  # Day after festival ends
 LOCATIONS = ["Weinzelt", "Bierwagen"]
@@ -19,15 +19,19 @@ SHIFT_TYPES = [
     {"start_hour": 22, "end_hour": 0}
 ]
 
-# Login with token
-if not TOKEN:
-    print("Set OPEN_FLAIR_ACCESS_TOKEN to a valid access token before running this script.")
+# Login with coordinator access code
+if not ACCESS_CODE:
+    print("Set COORDINATOR_CODE to a valid coordinator access code before running this script.")
     exit(1)
 
 session = requests.Session()
-response = session.get(f"{API_URL}/auth/login/{TOKEN}")
+response = session.post(f"{API_URL}/auth/login", json={"access_code": ACCESS_CODE})
 if response.status_code != 200:
     print(f"Login failed: {response.text}")
+    exit(1)
+
+if response.json().get("role") != "coordinator":
+    print("Login succeeded, but the access code is not a coordinator code")
     exit(1)
 
 print("Logged in successfully")

@@ -65,8 +65,11 @@ async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     process_time = time.time() - start_time
-    # Add processing time as a header to the response
     response.headers["X-Process-Time"] = str(process_time)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
     print(f"Request to {request.url.path} took {process_time:.4f} seconds")
     return response
 

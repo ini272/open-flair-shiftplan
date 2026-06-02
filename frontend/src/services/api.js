@@ -16,16 +16,16 @@ const api = axios.create({
 
 // Auth services
 export const authService = {
-  login: (token) => api.get(`/auth/login/${token}`),
+  login: (accessCode) => api.post('/auth/login', { access_code: accessCode }),
   logout: () => api.get('/auth/logout'),
   checkAuth: () => api.get('/auth/check'),
 };
 
 // User services
 export const userService = {
-  getUsers: () => api.get('/users'),
+  getUsers: () => api.get('/users/'),
   getUser: (id) => api.get(`/users/${id}`),
-  createUser: (userData) => api.post('/users', userData),
+  createUser: (userData) => api.post('/users/', userData),
   updateUser: (id, userData) => api.put(`/users/${id}`, userData),
   deleteUser: (id) => api.delete(`/users/${id}`),
   // Add this new method for email lookup
@@ -34,9 +34,9 @@ export const userService = {
 
 // Group services
 export const groupService = {
-  getGroups: () => api.get('/groups'),
+  getGroups: () => api.get('/groups/'),
   getGroup: (id) => api.get(`/groups/${id}`),
-  createGroup: (groupData) => api.post('/groups', groupData),
+  createGroup: (groupData) => api.post('/groups/', groupData),
   updateGroup: (id, groupData) => api.put(`/groups/${id}`, groupData),
   deleteGroup: (id) => api.delete(`/groups/${id}`),
   addUserToGroup: (groupId, userId, maxGroupSize = 4) => api.post(`/groups/${groupId}/users/${userId}`, null, {
@@ -47,7 +47,7 @@ export const groupService = {
 
 // Shift services
 export const shiftService = {
-  getShifts: (params) => api.get('/shifts', { params }),
+  getShifts: (params) => api.get('/shifts/', { params }),
   getShift: (id) => api.get(`/shifts/${id}`),
   createShift: (shiftData) => api.post('/shifts', shiftData),
   updateShift: (id, shiftData) => api.put(`/shifts/${id}`, shiftData),

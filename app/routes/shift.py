@@ -3,7 +3,14 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_tracer, get_db, require_auth
+from app.dependencies import (
+    ensure_group_member_or_coordinator,
+    ensure_self_or_coordinator,
+    get_tracer,
+    get_db,
+    require_auth,
+    require_coordinator,
+)
 from app.schemas.shift import (
     Shift, ShiftCreate, ShiftUpdate, ShiftWithAssignees,
     ShiftUserBase, ShiftGroupBase
@@ -12,6 +19,7 @@ from app.schemas.user import User
 from app.crud.shift import shift as shift_crud
 from app.crud.user import user as user_crud
 from app.crud.group import group as group_crud
+from app.security import AuthSession
 
 # Create a router for shift-related endpoints
 router = APIRouter(
@@ -78,7 +86,8 @@ def has_single_slot_gap(slot_positions: List[int]) -> bool:
 @router.post("/", response_model=Shift, status_code=status.HTTP_201_CREATED)
 def create_shift(
     shift_in: ShiftCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Create a new shift.
@@ -144,7 +153,7 @@ def read_shifts(
 @router.get("/current-assignments")
 def get_current_assignments(
     db: Session = Depends(get_db),
-    _: bool = Depends(require_auth)
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Get all current shift assignments in the same format as generate-plan returns.
@@ -201,7 +210,7 @@ def get_current_assignments(
 @router.delete("/all-assignments", status_code=status.HTTP_200_OK)
 def clear_all_assignments(
     db: Session = Depends(get_db),
-    _: bool = Depends(require_auth)
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """Clear all shift assignments (both users and groups)."""
     with tracer.start_as_current_span("clear-all-assignments") as span:
@@ -245,7 +254,8 @@ def read_shift(
 def update_shift(
     shift_id: int,
     shift_in: ShiftUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Update a shift.
@@ -264,7 +274,8 @@ def update_shift(
 @router.delete("/{shift_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_shift(
     shift_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> None:
     """
     Delete a shift.
@@ -282,7 +293,8 @@ def delete_shift(
 @router.post("/users/", status_code=status.HTTP_200_OK)
 def add_user_to_shift(
     assignment: ShiftUserBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Add a user to a shift.
@@ -343,7 +355,8 @@ def add_user_to_shift(
 @router.post("/groups/", status_code=status.HTTP_200_OK)
 def add_group_to_shift(
     assignment: ShiftGroupBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Add a group to a shift.
@@ -400,7 +413,8 @@ def add_group_to_shift(
 def remove_user_from_shift(
     shift_id: int,
     user_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Remove a user from a shift.
@@ -426,7 +440,8 @@ def remove_user_from_shift(
 def remove_group_from_shift(
     shift_id: int,
     group_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Remove a group from a shift.
@@ -454,7 +469,8 @@ def remove_group_from_shift(
 @router.post("/generate-plan", status_code=status.HTTP_200_OK)
 def generate_shift_plan(
     max_shifts_per_user: int = 10,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Generate a shift plan by assigning users and groups to shifts based on opt-outs.
@@ -872,7 +888,8 @@ def shifts_overlap(shift1, shift2):
 @router.post("/user-opt-out", status_code=status.HTTP_200_OK)
 def opt_out_user(
     opt_out: ShiftUserBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Opt a user out of a shift.
@@ -892,6 +909,8 @@ def opt_out_user(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, opt_out.user_id)
         
         # Check if user is in a group - if so, they can't have individual opt-outs
         if user.group_id is not None:
@@ -915,7 +934,8 @@ def opt_out_user(
 @router.post("/user-opt-in", status_code=status.HTTP_200_OK)
 def opt_in_user(
     opt_in: ShiftUserBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Opt a user back into a shift.
@@ -935,6 +955,8 @@ def opt_in_user(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, opt_in.user_id)
         
         # Check if user is in a group - if so, they can't have individual opt-outs
         if user.group_id is not None:
@@ -958,7 +980,8 @@ def opt_in_user(
 @router.post("/group-opt-out", status_code=status.HTTP_200_OK)
 def opt_out_group(
     opt_out: ShiftGroupBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Opt a group out of a shift.
@@ -978,6 +1001,8 @@ def opt_out_group(
         if not group:
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
+
+        ensure_group_member_or_coordinator(db, auth_session, opt_out.group_id)
         
         # Opt the group out
         updated_shift = shift_crud.opt_out_group(
@@ -993,7 +1018,8 @@ def opt_out_group(
 @router.post("/group-opt-in", status_code=status.HTTP_200_OK)
 def opt_in_group(
     opt_in: ShiftGroupBase,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Opt a group back into a shift.
@@ -1013,6 +1039,8 @@ def opt_in_group(
         if not group:
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
+
+        ensure_group_member_or_coordinator(db, auth_session, opt_in.group_id)
         
         # Opt the group in
         updated_shift = shift_crud.opt_in_group(
@@ -1029,7 +1057,8 @@ def opt_in_group(
 def check_opt_out_status(
     shift_id: int,
     user_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Check if a user is opted out of a shift.
@@ -1049,6 +1078,8 @@ def check_opt_out_status(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Check if user is opted out
         is_opted_out = shift_crud.is_user_opted_out(
@@ -1060,7 +1091,8 @@ def check_opt_out_status(
 @router.get("/user-opt-outs/{user_id}", response_model=List[Shift])
 def get_user_opt_outs(
     user_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Get all shifts a user is opted out of.
@@ -1073,6 +1105,8 @@ def get_user_opt_outs(
         if not user:
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        ensure_self_or_coordinator(auth_session, user_id)
         
         # Get opt-outs
         opt_outs = shift_crud.get_user_opt_outs(db, user_id=user_id)
@@ -1082,7 +1116,8 @@ def get_user_opt_outs(
 @router.get("/group-opt-outs/{group_id}", response_model=List[Shift])
 def get_group_opt_outs(
     group_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Get all shifts a group is opted out of.
@@ -1095,6 +1130,8 @@ def get_group_opt_outs(
         if not group:
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
+
+        ensure_group_member_or_coordinator(db, auth_session, group_id)
         
         # Get opt-outs
         opt_outs = shift_crud.get_group_opt_outs(db, group_id=group_id)
@@ -1104,7 +1141,8 @@ def get_group_opt_outs(
 @router.get("/available-users/{shift_id}", response_model=List[User])
 def get_available_users(
     shift_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
 ) -> Any:
     """
     Get all users available for a shift (not opted out).
