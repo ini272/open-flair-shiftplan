@@ -248,7 +248,16 @@ const CoordinatorPersonView = ({
                           : (isAvailable
                             ? translations.coordinator.userAvailable
                             : translations.coordinator.userOptedOut);
-                        const tooltipTitle = `${shift.title} • ${assignmentTitle}`;
+                        const tooltipTitle = (
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                              {shift.title}
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block' }}>
+                              {assignmentTitle}
+                            </Typography>
+                          </Box>
+                        );
 
                         return (
                           <Tooltip key={shift.id} title={tooltipTitle}>

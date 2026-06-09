@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime, timedelta
+import random
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -31,6 +33,8 @@ router = APIRouter(
 
 # Get the tracer for this module
 tracer = get_tracer()
+
+PLANNER_RANDOMIZATION_SCORE_WINDOW = 3.0
 
 
 def get_planner_day_start(shift) -> datetime:
@@ -209,7 +213,7 @@ def get_current_assignments(
             # First, process group assignments
             for group in shift.groups:
                 for user in group.users:
-                    if user.is_active:
+                    if user.is_active and not user.is_coordinator:
                         users_via_groups.add(user.id)
                         assignments.append({
                             "shift_id": shift.id,
@@ -217,19 +221,19 @@ def get_current_assignments(
                             "user_id": user.id,
                             "username": user.username,
                             "assigned_via": "group",
-                            "group_name": group.name
+                            "group_name": group.name,
                         })
             
             # Then, process individual user assignments
             for user in shift.users:
-                if user.is_active and user.id not in users_via_groups:
+                if user.is_active and not user.is_coordinator and user.id not in users_via_groups:
                     assignments.append({
                         "shift_id": shift.id,
                         "shift_title": shift.title,
                         "user_id": user.id,
                         "username": user.username,
                         "assigned_via": "individual",
-                        "group_name": user.group.name if user.group else None
+                        "group_name": user.group.name if user.group else None,
                     })
         
         span.set_attribute("assignments.count", len(assignments))
@@ -237,7 +241,8 @@ def get_current_assignments(
         
         return {
             "assignments": assignments,
-            "total_assignments": len(assignments)
+            "total_assignments": len(assignments),
+            "planner": None,
         }
 
 @router.delete("/all-assignments", status_code=status.HTTP_200_OK)
@@ -353,7 +358,15 @@ def add_user_to_shift(
             span.add_event("user_not_found", {"user_id": assignment.user_id})
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
-        
+
+        if user.is_coordinator:
+            span.add_event("coordinator_assignment_blocked", {"user_id": assignment.user_id})
+            span.set_attribute("error", "Coordinator accounts cannot be assigned to shifts")
+            raise HTTPException(
+                status_code=400,
+                detail="Coordinator accounts cannot be assigned to shifts",
+            )
+
         # Check capacity
         span.add_event("checking_shift_capacity", {
             "current_users": shift.current_user_count,
@@ -417,7 +430,15 @@ def add_group_to_shift(
             span.add_event("group_not_found", {"group_id": assignment.group_id})
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
-        
+
+        if any(user.is_coordinator for user in group.users):
+            span.add_event("coordinator_group_assignment_blocked", {"group_id": assignment.group_id})
+            span.set_attribute("error", "Groups with coordinator accounts cannot be assigned to shifts")
+            raise HTTPException(
+                status_code=400,
+                detail="Groups with coordinator accounts cannot be assigned to shifts",
+            )
+
         # Add group to shift (this will check capacity)
         span.add_event("assigning_group_to_shift", {
             "group_user_count": len(group.users),
@@ -502,6 +523,7 @@ def remove_group_from_shift(
 @router.post("/generate-plan", status_code=status.HTTP_200_OK)
 def generate_shift_plan(
     max_shifts_per_user: int = 10,
+    planner_seed: Optional[int] = Query(default=None, ge=0),
     db: Session = Depends(get_db),
     _: AuthSession = Depends(require_coordinator),
 ) -> Any:
@@ -526,7 +548,10 @@ def generate_shift_plan(
         from app.crud.group import group as group_crud
         
         all_users = user_crud.get_multi(db, skip=0, limit=1000)
-        active_users = [user for user in all_users if user.is_active]
+        active_users = [
+            user for user in all_users
+            if user.is_active and not user.is_coordinator
+        ]
         
         # Get all active groups (always use groups)
         all_groups = group_crud.get_multi(db, skip=0, limit=1000)
@@ -538,11 +563,21 @@ def generate_shift_plan(
         span.set_attribute("users.active", len(active_users))
         span.set_attribute("groups.total", len(all_groups))
         span.set_attribute("groups.active", len(active_groups))
+
+        resolved_planner_seed = planner_seed if planner_seed is not None else secrets.randbelow(2**32)
+        rng = random.Random(resolved_planner_seed)
+        randomized_decisions = 0
+        span.set_attribute("planner.seed", resolved_planner_seed)
         
         if not active_shifts:
             return {
                 "message": "No active shifts found",
                 "assignments": [],
+                "planner": {
+                    "seed": resolved_planner_seed,
+                    "score_window": PLANNER_RANDOMIZATION_SCORE_WINDOW,
+                    "randomized_decisions": randomized_decisions,
+                },
                 "statistics": {
                     "shifts_assigned": 0,
                     "total_assignments": 0,
@@ -556,8 +591,13 @@ def generate_shift_plan(
         
         if not active_users:
             return {
-                "message": "No active users found",
+                "message": "No active participant users found",
                 "assignments": [],
+                "planner": {
+                    "seed": resolved_planner_seed,
+                    "score_window": PLANNER_RANDOMIZATION_SCORE_WINDOW,
+                    "randomized_decisions": randomized_decisions,
+                },
                 "statistics": {
                     "shifts_assigned": 0,
                     "total_assignments": 0,
@@ -610,6 +650,9 @@ def generate_shift_plan(
         active_group_ids: Set[int] = set()
 
         for group in active_groups:
+            if any(user.is_active and user.is_coordinator for user in group.users):
+                continue
+
             group_users = [user for user in group.users if user.is_active]
             if not group_users:
                 continue
@@ -646,6 +689,11 @@ def generate_shift_plan(
             return {
                 "message": "No active planning units found",
                 "assignments": [],
+                "planner": {
+                    "seed": resolved_planner_seed,
+                    "score_window": PLANNER_RANDOMIZATION_SCORE_WINDOW,
+                    "randomized_decisions": randomized_decisions,
+                },
                 "statistics": {
                     "shifts_assigned": 0,
                     "total_assignments": 0,
@@ -673,7 +721,6 @@ def generate_shift_plan(
             )
 
         unit_available_shift_ids: Dict[str, Set[int]] = {}
-        unit_available_slot_keys: Dict[str, Set[Tuple[str, Tuple[int, int, int, int]]]] = {}
         unit_available_day_keys: Dict[str, Set[str]] = {}
         unit_available_evening_counts: Dict[str, int] = {}
         unit_available_slot_counts: Dict[str, int] = {}
@@ -702,17 +749,9 @@ def generate_shift_plan(
             }
 
             unit_available_shift_ids[unit["key"]] = available_shift_ids
-            unit_available_slot_keys[unit["key"]] = available_slot_keys
             unit_available_day_keys[unit["key"]] = available_day_keys
             unit_available_evening_counts[unit["key"]] = len(available_evening_slots)
             unit_available_slot_counts[unit["key"]] = len(available_slot_keys)
-
-        def unit_is_available_for_shift(unit: Dict[str, Any], shift: Any) -> bool:
-            capacity = shift.capacity or 5
-            if unit["size"] > capacity:
-                return False
-
-            return shift_slot_key[shift.id] in unit_available_slot_keys[unit["key"]]
 
         potential_unit_count = {
             shift.id: sum(
@@ -747,6 +786,13 @@ def generate_shift_plan(
                 shifts_overlap(shift, assigned_shift)
                 for assigned_shift in unit_assignments[unit["key"]]
             )
+
+        def unit_would_create_long_stretch(unit: Dict[str, Any], shift: Any) -> bool:
+            unit_key = unit["key"]
+            day_key = get_shift_day_key(shift)
+            same_day_slots = unit_day_slots[unit_key].get(day_key, [])
+            candidate_slots = sorted(same_day_slots + [shift_slot_index[shift.id]])
+            return get_max_consecutive_slots(candidate_slots) > 2
 
         def score_unit_for_shift(unit: Dict[str, Any], shift: Any) -> float:
             unit_key = unit["key"]
@@ -851,20 +897,39 @@ def generate_shift_plan(
                 if not eligible_units:
                     break
 
+                preferred_units = [
+                    unit for unit in eligible_units
+                    if not unit_would_create_long_stretch(unit, shift)
+                ]
+
+                if preferred_units:
+                    eligible_units = preferred_units
+
                 scored_units = sorted(
                     (
-                        (
-                            -score_unit_for_shift(unit, shift),
-                            unit_shift_count[unit["key"]],
-                            unit["sort_order"],
-                            unit,
-                        )
+                        {
+                            "score": score_unit_for_shift(unit, shift),
+                            "unit_shift_count": unit_shift_count[unit["key"]],
+                            "sort_order": unit["sort_order"],
+                            "unit": unit,
+                        }
                         for unit in eligible_units
                     ),
-                    key=lambda item: (item[0], item[1], item[2]),
+                    key=lambda item: (-item["score"], item["unit_shift_count"], item["sort_order"]),
                 )
 
-                selected_unit = scored_units[0][3]
+                best_score = scored_units[0]["score"]
+                top_candidate_entries = [
+                    entry
+                    for entry in scored_units
+                    if best_score - entry["score"] <= PLANNER_RANDOMIZATION_SCORE_WINDOW
+                ]
+                randomized_choice = len(top_candidate_entries) > 1
+                if randomized_choice:
+                    randomized_decisions += 1
+
+                selected_entry = rng.choice(top_candidate_entries)
+                selected_unit = selected_entry["unit"]
                 selected_unit_key = selected_unit["key"]
                 selected_day_key = get_shift_day_key(shift)
 
@@ -941,10 +1006,16 @@ def generate_shift_plan(
         span.set_attribute("assignments.groups", group_assignments)
         span.set_attribute("assignments.individuals", individual_assignments)
         span.set_attribute("max_shifts_limit_hits", max_shifts_limit_hits)
+        span.set_attribute("planner.randomized_decisions", randomized_decisions)
         
         return {
             "message": f"Successfully generated shift plan with {total_assignments} assignments ({group_assignments} groups, {individual_assignments} individuals). Max shifts limit hit {max_shifts_limit_hits} times.",
             "assignments": assignments,
+            "planner": {
+                "seed": resolved_planner_seed,
+                "score_window": PLANNER_RANDOMIZATION_SCORE_WINDOW,
+                "randomized_decisions": randomized_decisions,
+            },
             "statistics": statistics
         }
 

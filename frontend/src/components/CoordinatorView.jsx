@@ -18,6 +18,7 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import CoordinatorShiftGrid from './CoordinatorShiftGrid';
 import CoordinatorPersonView from './CoordinatorPersonView';
 import { groupService, shiftService } from '../services/api';
+import { buildTeamColorMap, getTeamColor } from '../utils/teamColors';
 import { translations } from '../utils/translations';
 
 const ActionBar = styled(Paper)(({ theme }) => ({
@@ -27,26 +28,40 @@ const ActionBar = styled(Paper)(({ theme }) => ({
   boxShadow: 'none',
 }));
 
+const formatSelectionLabel = (option) => {
+  if (!option) {
+    return '';
+  }
+
+  return `${option.label} (${option.shiftCount ?? 0})`;
+};
+
 const CoordinatorView = ({ shifts, users }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentAssignments, setCurrentAssignments] = useState(null);
+  const [plannerSummary, setPlannerSummary] = useState(null);
   const [error, setError] = useState(null);
   const [maxShiftsPerUser, setMaxShiftsPerUser] = useState(10);
   const [viewMode, setViewMode] = useState('day');
   const [selectedViewKey, setSelectedViewKey] = useState('');
   const [userOptOuts, setUserOptOuts] = useState({});
   const [groupOptions, setGroupOptions] = useState([]);
+  const [teamDirectory, setTeamDirectory] = useState([]);
   const [groupOptOuts, setGroupOptOuts] = useState({});
   const [loadingSelectionContext, setLoadingSelectionContext] = useState(false);
   const [selectionContextLoaded, setSelectionContextLoaded] = useState(false);
+  const registeredPeopleCount = users?.length || 0;
 
   useEffect(() => {
     const loadCurrentAssignments = async () => {
       try {
         const response = await shiftService.getCurrentAssignments();
+        setPlannerSummary(response.data.planner || null);
 
         if (response.data.assignments && response.data.assignments.length > 0) {
           setCurrentAssignments(response.data.assignments);
+        } else {
+          setCurrentAssignments(null);
         }
       } catch (loadError) {
         console.log('No existing assignments or error loading:', loadError.message);
@@ -54,6 +69,19 @@ const CoordinatorView = ({ shifts, users }) => {
     };
 
     loadCurrentAssignments();
+  }, []);
+
+  useEffect(() => {
+    const loadTeamDirectory = async () => {
+      try {
+        const groupsResponse = await groupService.getGroups();
+        setTeamDirectory(groupsResponse.data.filter((group) => group.is_active));
+      } catch (loadError) {
+        console.log('Failed to load team directory:', loadError);
+      }
+    };
+
+    loadTeamDirectory();
   }, []);
 
   const ensureSelectionContextLoaded = useCallback(async () => {
@@ -64,8 +92,9 @@ const CoordinatorView = ({ shifts, users }) => {
     setLoadingSelectionContext(true);
 
     try {
+      const selectableUsers = (users || []).filter((user) => !user.group_id);
       const userOptOutResults = await Promise.all(
-        users.map(async (user) => {
+        selectableUsers.map(async (user) => {
           try {
             const response = await shiftService.getUserOptOuts(user.id);
             return { userId: user.id, optOuts: response.data };
@@ -111,7 +140,7 @@ const CoordinatorView = ({ shifts, users }) => {
         setGroupOptions(
           groupDetails
             .map(({ group }) => group)
-            .filter((group) => group.users && group.users.length > 0)
+            .filter((group) => group.users && group.users.length > 0 && group.users.every((user) => !user.is_coordinator))
         );
 
         const nextGroupOptOuts = {};
@@ -142,11 +171,10 @@ const CoordinatorView = ({ shifts, users }) => {
     try {
       const response = await shiftService.generatePlan(maxShiftsPerUser);
       setCurrentAssignments(response.data.assignments);
+      setPlannerSummary(response.data.planner || null);
     } catch (generationError) {
       console.error('Detailed error:', generationError);
-      setError(
-        `${translations.coordinator.planGenerationFailed}: ${generationError.message || 'Unknown error'}`
-      );
+      setError(translations.coordinator.planGenerationFailed);
     } finally {
       setIsGenerating(false);
     }
@@ -156,16 +184,18 @@ const CoordinatorView = ({ shifts, users }) => {
     try {
       await shiftService.clearAllAssignments();
       setCurrentAssignments(null);
+      setPlannerSummary(null);
       setError(null);
     } catch (resetError) {
       console.error('Error clearing assignments:', resetError);
-      setError(`Failed to reset assignments: ${resetError.message || 'Unknown error'}`);
+      setError(translations.coordinator.resetPlanFailed);
     }
   };
 
   const handleRefreshAssignments = async () => {
     try {
       const response = await shiftService.getCurrentAssignments();
+      setPlannerSummary(response.data.planner || null);
 
       if (response.data.assignments && response.data.assignments.length > 0) {
         setCurrentAssignments(response.data.assignments);
@@ -209,6 +239,7 @@ const CoordinatorView = ({ shifts, users }) => {
 
   const selectionOptions = useMemo(() => {
     const userOptions = [...(users || [])]
+      .filter((user) => !user.group_id)
       .sort((a, b) => a.username.localeCompare(b.username, 'de'))
       .map((user) => ({
         key: `user-${user.id}`,
@@ -231,6 +262,10 @@ const CoordinatorView = ({ shifts, users }) => {
 
     return [...userOptions, ...teamOptions];
   }, [assignmentStats.groupShiftCounts, assignmentStats.userShiftCounts, groupOptions, users]);
+
+  const teamColorMap = useMemo(() => {
+    return buildTeamColorMap(teamDirectory);
+  }, [teamDirectory]);
 
   const selectedViewOption = useMemo(() => {
     return selectionOptions.find((option) => option.key === selectedViewKey) || null;
@@ -295,9 +330,16 @@ const CoordinatorView = ({ shifts, users }) => {
             value={maxShiftsPerUser}
             onChange={(event) => setMaxShiftsPerUser(parseInt(event.target.value, 10) || 10)}
             inputProps={{ min: 1, max: 20 }}
-            sx={{ width: { xs: '100%', sm: 220 }, ml: { lg: 'auto' } }}
+            sx={{ width: { xs: '100%', sm: 220 } }}
             size="small"
           />
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ ml: { lg: 'auto' }, whiteSpace: 'nowrap' }}
+          >
+            {`${translations.coordinator.registeredPeople}: ${registeredPeopleCount}`}
+          </Typography>
         </Stack>
       </ActionBar>
 
@@ -337,7 +379,7 @@ const CoordinatorView = ({ shifts, users }) => {
               value={selectedViewOption}
               loading={loadingSelectionContext}
               onChange={(_, nextValue) => setSelectedViewKey(nextValue?.key || '')}
-              getOptionLabel={(option) => option.label || ''}
+              getOptionLabel={formatSelectionLabel}
               isOptionEqualToValue={(option, value) => option.key === value.key}
               groupBy={(option) => (
                 option.type === 'group'
@@ -350,16 +392,25 @@ const CoordinatorView = ({ shifts, users }) => {
               sx={{ minWidth: { xs: '100%', md: 320 } }}
               renderOption={(props, option) => {
                 const { key, ...optionProps } = props;
+                const teamColor = option.type === 'group' ? getTeamColor(option.label, teamColorMap) : null;
 
                 return (
                   <Box component="li" key={key} {...optionProps}>
-                    <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', width: '100%' }}>
-                      <Typography variant="body2">{option.label}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {option.shiftCount > 0
-                          ? `${option.shiftCount} ${translations.coordinator.assignedCountSuffix}`
-                          : translations.coordinator.noAssignmentsShort}
-                      </Typography>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
+                      {teamColor && (
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            flexShrink: 0,
+                            backgroundColor: teamColor.accent,
+                            border: `1px solid ${teamColor.accent}`,
+                            boxShadow: `0 0 0 2px ${teamColor.surface}`,
+                          }}
+                        />
+                      )}
+                      <Typography variant="body2">{formatSelectionLabel(option)}</Typography>
                     </Stack>
                   </Box>
                 );
@@ -385,6 +436,8 @@ const CoordinatorView = ({ shifts, users }) => {
         <CoordinatorShiftGrid
           shifts={shifts}
           generatedAssignments={currentAssignments}
+          maxShiftsPerUser={maxShiftsPerUser}
+          teamColorMap={teamColorMap}
           onAssignmentsChange={handleRefreshAssignments}
         />
       ) : (

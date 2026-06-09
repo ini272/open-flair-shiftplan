@@ -21,10 +21,52 @@ import {
   InputLabel,
   FormControl as MuiFormControl
 } from '@mui/material';
-import { userService, groupService } from '../services/api';
+import { authService, userService, groupService } from '../services/api';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
 import GroupIcon from '@mui/icons-material/Group';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_GROUP_SIZE = 3;
+
+const isValidEmail = (value) => EMAIL_REGEX.test(value.trim());
+
+const getApiErrorDetail = (error) => {
+  const detail = error?.response?.data?.detail;
+  return typeof detail === 'string' ? detail.trim() : '';
+};
+
+const getAccountErrorMessage = (error, fallback, options = {}) => {
+  const detail = getApiErrorDetail(error);
+  const fallbackMessage = fallback || translations.account.accountLookupFailed;
+  const { groupName } = options;
+
+  if (!detail) {
+    if (error?.message && !error.message.startsWith('Request failed with status code')) {
+      return error.message;
+    }
+    return fallbackMessage;
+  }
+
+  const detailMap = {
+    'Email already registered': translations.account.emailAlreadyRegistered,
+    'Username already taken': translations.account.usernameAlreadyTaken,
+    'Group with this name already exists': translations.account.groupAlreadyExists,
+    'User not found': translations.account.userNotFound,
+    'Failed to add user to group': translations.account.groupJoinFailed,
+    'Coordinator accounts cannot join groups': translations.account.coordinatorCannotJoinGroups,
+  };
+
+  if (detailMap[detail]) {
+    return detailMap[detail];
+  }
+
+  if (detail.startsWith('Group is full')) {
+    return `Die Gruppe "${groupName}" ist voll (maximal ${MAX_GROUP_SIZE} Mitglieder). Bitte wähle einen anderen Gruppennamen oder arbeite alleine.`;
+  }
+
+  return detail;
+};
 
 // Tab panel component
 function TabPanel(props) {
@@ -58,17 +100,47 @@ const AccountAccessPage = () => {
   const [groupName, setGroupName] = useState('');
   const [newUserError, setNewUserError] = useState('');
   const [newUserLoading, setNewUserLoading] = useState(false);
+  const [newUserFieldErrors, setNewUserFieldErrors] = useState({
+    username: '',
+    email: '',
+    group: '',
+  });
   
   // Returning user state
   const [returningEmail, setReturningEmail] = useState('');
   const [returningError, setReturningError] = useState('');
   const [returningLoading, setReturningLoading] = useState(false);
+  const [returningEmailError, setReturningEmailError] = useState('');
 
   const [existingGroups, setExistingGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [authRole, setAuthRole] = useState(null);
+  const isCoordinatorAccess = authRole === 'coordinator';
+  const trimmedGroupName = groupName.trim();
+  const selectedExistingGroup = existingGroups.find((group) => group.name === trimmedGroupName) || null;
+
+  useEffect(() => {
+    const loadAuthRole = async () => {
+      try {
+        const response = await authService.checkAuth();
+        setAuthRole(response.data.role || null);
+      } catch (error) {
+        console.warn('Could not determine access role:', error);
+        setAuthRole(null);
+      }
+    };
+
+    loadAuthRole();
+  }, []);
 
   useEffect(() => {
     const loadExistingGroups = async () => {
+      if (isCoordinatorAccess) {
+        setExistingGroups([]);
+        setLoadingGroups(false);
+        return;
+      }
+
       try {
         setLoadingGroups(true);
         const response = await groupService.getGroups();
@@ -89,7 +161,7 @@ const AccountAccessPage = () => {
         
         setExistingGroups(groupsWithMembers);
       } catch (error) {
-        console.log('Could not load existing groups:', error);
+        console.warn('Could not load existing groups:', error);
         // Not critical - user can still type manually
       } finally {
         setLoadingGroups(false);
@@ -97,7 +169,7 @@ const AccountAccessPage = () => {
     };
     
     loadExistingGroups();
-  }, []);
+  }, [isCoordinatorAccess]);
 
   // Handle tab change
   const handleTabChange = (event, newValue) => {
@@ -108,42 +180,65 @@ const AccountAccessPage = () => {
   const handleNewUserSubmit = async (e) => {
     e.preventDefault();
     setNewUserError('');
+    setNewUserFieldErrors({
+      username: '',
+      email: '',
+      group: '',
+    });
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const nextFieldErrors = {
+      username: '',
+      email: '',
+      group: '',
+    };
+
+    if (!trimmedName) {
+      nextFieldErrors.username = translations.account.usernameRequired;
+    }
+
+    if (!trimmedEmail) {
+      nextFieldErrors.email = translations.account.emailRequired;
+    } else if (!isValidEmail(trimmedEmail)) {
+      nextFieldErrors.email = translations.account.emailInvalid;
+    }
+
+    if (workPreference === 'group' && !trimmedGroupName) {
+      nextFieldErrors.group = translations.account.groupRequired;
+    }
+
+    if (nextFieldErrors.username || nextFieldErrors.email || nextFieldErrors.group) {
+      setNewUserFieldErrors(nextFieldErrors);
+      return;
+    }
+
     setNewUserLoading(true);
     
     try {
-      // Validate inputs first
-      if (!name.trim()) {
-        throw new Error('Bitte geben Sie Ihren Namen ein');
-      }
       
-      if (!email.trim()) {
-        throw new Error('Bitte geben Sie Ihre E-Mail-Adresse ein');
-      }
-      
-      if (workPreference === 'group' && !groupName.trim()) {
-        throw new Error('Bitte geben Sie einen Gruppennamen ein');
-      }
-      
+      const wantsGroup = !isCoordinatorAccess && workPreference === 'group';
+
       // If working in a group, check if group is full BEFORE creating user
-      if (workPreference === 'group') {
+      if (wantsGroup) {
         try {
           const groupsResponse = await groupService.getGroups();
-          const existingGroup = groupsResponse.data.find(g => g.name === groupName);
+          const existingGroup = groupsResponse.data.find(g => g.name === trimmedGroupName);
           
           if (existingGroup) {
             // Check if group is full by getting group details
             const groupDetails = await groupService.getGroup(existingGroup.id);
             const currentSize = groupDetails.data.users ? groupDetails.data.users.length : 0;
-            const maxSize = 4; // You might want to get this from coordinator settings later
+            const maxSize = MAX_GROUP_SIZE;
             
             if (currentSize >= maxSize) {
-              throw new Error(`Die Gruppe "${groupName}" ist voll (maximal ${maxSize} Mitglieder). Bitte wählen Sie einen anderen Gruppennamen oder arbeiten Sie alleine.`);
+              throw new Error(`Die Gruppe "${trimmedGroupName}" ist voll (maximal ${maxSize} Mitglieder). Bitte wähle einen anderen Gruppennamen oder arbeite alleine.`);
             }
           }
         } catch (groupErr) {
-          if (groupErr.message && groupErr.message.includes('voll')) {
-            throw groupErr; // Re-throw our custom error
-          }
+            if (groupErr.message && groupErr.message.includes('voll')) {
+              throw groupErr; // Re-throw our custom error
+            }
           // If it's just a network error checking groups, continue
           console.warn('Could not check group status:', groupErr);
         }
@@ -151,31 +246,27 @@ const AccountAccessPage = () => {
       
       // Now create the user
       const userResponse = await userService.createUser({
-        username: name,
-        email: email
+        username: trimmedName,
+        email: trimmedEmail
       });
-      
-      console.log('User created successfully:', userResponse.data);
-      
+
       // Store user info in localStorage
       localStorage.setItem('user_id', userResponse.data.id);
-      localStorage.setItem('username', name);
+      localStorage.setItem('username', trimmedName);
       
       // If working in a group, join or create the group
-      if (workPreference === 'group') {
+      if (wantsGroup) {
         try {
           const groupsResponse = await groupService.getGroups();
-          const existingGroup = groupsResponse.data.find(g => g.name === groupName);
+          const existingGroup = groupsResponse.data.find(g => g.name === trimmedGroupName);
           
           if (existingGroup) {
             // Join existing group
-            await groupService.addUserToGroup(existingGroup.id, userResponse.data.id, 4);
-            console.log('Joined existing group:', existingGroup.name);
+            await groupService.addUserToGroup(existingGroup.id, userResponse.data.id, MAX_GROUP_SIZE);
           } else {
             // Create new group
-            const newGroupResponse = await groupService.createGroup({ name: groupName });
-            await groupService.addUserToGroup(newGroupResponse.data.id, userResponse.data.id, 4);
-            console.log('Created and joined new group:', groupName);
+            const newGroupResponse = await groupService.createGroup({ name: trimmedGroupName });
+            await groupService.addUserToGroup(newGroupResponse.data.id, userResponse.data.id, MAX_GROUP_SIZE);
           }
         } catch (groupErr) {
           // If group joining fails, we need to clean up the user
@@ -183,28 +274,33 @@ const AccountAccessPage = () => {
           
           try {
             await userService.deleteUser(userResponse.data.id);
-            console.log('Successfully cleaned up user after group join failure');
           } catch (cleanupErr) {
             console.error('Failed to cleanup user:', cleanupErr);
           }
           
           // Show German error message
           if (groupErr.response && groupErr.response.status === 400 && groupErr.response.data.detail) {
-            // Use the backend error message if it's in German
-            if (groupErr.response.data.detail.includes('voll') || groupErr.response.data.detail.includes('full')) {
-              throw new Error(`Die Gruppe "${groupName}" ist voll (maximal 4 Mitglieder). Bitte wählen Sie einen anderen Gruppennamen oder arbeiten Sie alleine.`);
-            }
+            throw new Error(
+              getAccountErrorMessage(groupErr, translations.account.groupJoinFailed, {
+                groupName: trimmedGroupName,
+              })
+            );
           }
-          throw new Error('Fehler beim Beitreten zur Gruppe. Bitte versuchen Sie es erneut.');
+          throw new Error(translations.account.groupJoinFailed);
         }
       }
-      
-      console.log('Navigating to dashboard...');
+
       navigate('/dashboard');
       
     } catch (err) {
-      console.error('Error during new user setup:', err);
-      setNewUserError(err.message || 'Fehler beim Erstellen des Benutzers. Bitte versuchen Sie es erneut.');
+      if (!err?.response) {
+        console.error('Error during new user setup:', err);
+      }
+      setNewUserError(
+        getAccountErrorMessage(err, translations.account.createFailed, {
+          groupName: trimmedGroupName,
+        })
+      );
     } finally {
       setNewUserLoading(false);
     }
@@ -214,34 +310,41 @@ const AccountAccessPage = () => {
   const handleReturningUserSubmit = async (e) => {
     e.preventDefault();
     setReturningError('');
+    setReturningEmailError('');
+
+    const trimmedEmail = returningEmail.trim();
+
+    if (!trimmedEmail) {
+      setReturningEmailError(translations.account.emailRequired);
+      return;
+    }
+
+    if (!isValidEmail(trimmedEmail)) {
+      setReturningEmailError(translations.account.emailInvalid);
+      return;
+    }
+
     setReturningLoading(true);
     
-    console.log('Looking up returning user by email:', returningEmail);
-    
     try {
-      // Validate input
-      if (!returningEmail.trim()) {
-        throw new Error('Please enter your email');
-      }
       
       // Look up user by email
-      const response = await userService.lookupByEmail(returningEmail);
+      const response = await userService.lookupByEmail(trimmedEmail);
       const user = response.data;
-      
-      console.log('User found:', user);
-      
+
       // Store user info in localStorage
       localStorage.setItem('user_id', user.id);
       localStorage.setItem('username', user.username);
-      
-      console.log('Navigating to dashboard...');
+
       navigate('/dashboard');
     } catch (err) {
-      console.error('Error looking up user:', err);
+      if (!err?.response || err.response.status !== 404) {
+        console.error('Error looking up user:', err);
+      }
       if (err.response && err.response.status === 404) {
-        setReturningError('No user found with this email. Please check your email or create a new account.');
+        setReturningError(translations.account.userNotFound);
       } else {
-        setReturningError('An error occurred. Please try again.');
+        setReturningError(getAccountErrorMessage(err, translations.account.lookupFailed));
       }
     } finally {
       setReturningLoading(false);
@@ -261,7 +364,11 @@ const AccountAccessPage = () => {
           </Typography>
           
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs value={tabValue} onChange={handleTabChange} aria-label="account access tabs">
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              aria-label={translations.account.accountAccessTabsLabel}
+            >
               <Tab label={translations.account.newUser} id="account-tab-0" aria-controls="account-tabpanel-0" />
               <Tab label={translations.account.existingUser} id="account-tab-1" aria-controls="account-tabpanel-1" />
             </Tabs>
@@ -278,93 +385,167 @@ const AccountAccessPage = () => {
                 {newUserError}
               </Alert>
             )}
+
+            {isCoordinatorAccess && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {translations.account.coordinatorAccountInfo}
+              </Alert>
+            )}
             
-            <Box component="form" onSubmit={handleNewUserSubmit}>
+            <Box component="form" onSubmit={handleNewUserSubmit} noValidate>
               <TextField
                 label={translations.account.username}
                 fullWidth
                 margin="normal"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (newUserFieldErrors.username) {
+                    setNewUserFieldErrors((prev) => ({ ...prev, username: '' }));
+                  }
+                }}
                 required
+                error={Boolean(newUserFieldErrors.username)}
+                helperText={newUserFieldErrors.username || ' '}
               />
               
               <TextField
                 label={translations.account.email}
-                type="email"
+                type="text"
                 fullWidth
                 margin="normal"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (newUserFieldErrors.email) {
+                    setNewUserFieldErrors((prev) => ({ ...prev, email: '' }));
+                  }
+                }}
                 required
-                helperText="Du verwendest diese E-Mail beim nächsten Mal zum Anmelden"
+                error={Boolean(newUserFieldErrors.email)}
+                helperText={newUserFieldErrors.email || translations.account.emailHelper}
+                autoComplete="email"
+                inputProps={{
+                  inputMode: 'email',
+                  autoCapitalize: 'none',
+                  autoCorrect: 'off',
+                }}
               />
               
-              <FormControl component="fieldset" margin="normal">
-                <FormLabel component="legend">Wie möchtest du arbeiten?</FormLabel>
-                <RadioGroup
-                  value={workPreference}
-                  onChange={(e) => setWorkPreference(e.target.value)}
-                >
-                  <FormControlLabel value="alone" control={<Radio />} label="Ich arbeite alleine" />
-                  <FormControlLabel value="group" control={<Radio />} label="Ich arbeite in einer Gruppe" />
-                </RadioGroup>
-              </FormControl>
+              {!isCoordinatorAccess && (
+                <FormControl component="fieldset" margin="normal">
+                  <FormLabel component="legend">Wie möchtest du arbeiten?</FormLabel>
+                  <RadioGroup
+                    value={workPreference}
+                    onChange={(e) => setWorkPreference(e.target.value)}
+                  >
+                    <FormControlLabel value="alone" control={<Radio />} label="Ich arbeite alleine" />
+                    <FormControlLabel value="group" control={<Radio />} label="Ich arbeite in einer Gruppe" />
+                  </RadioGroup>
+                </FormControl>
+              )}
               
-              {workPreference === 'group' && (
-                <Autocomplete
-                  freeSolo
-                  options={existingGroups.map(group => group.name)}
-                  value={groupName}
-                  onChange={(event, newValue) => {
-                    setGroupName(newValue || '');
-                  }}
-                  onInputChange={(event, newInputValue) => {
-                    setGroupName(newInputValue);
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label={translations.account.group}
-                      fullWidth
-                      margin="normal"
-                      required
-                      helperText="Wähle eine bestehende Gruppe oder erstelle eine neue"
-                      disabled={loadingGroups}
-                    />
-                  )}
-                  renderOption={(props, option) => {
-                    const group = existingGroups.find(g => g.name === option);
-                    const memberNames = group?.users?.map(u => u.username).join(', ') || '';
-                    const currentSize = group?.users?.length || 0;
-                    const maxSize = 4; // You might want to get this from coordinator settings later
-                    const isFull = currentSize >= maxSize;
-                    
-                    return (
-                      <li {...props}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <GroupIcon fontSize="small" />
-                          <Box>
-                            <Typography variant="body2">
-                              {option}
-                              {memberNames && (
-                                <Typography component="span" variant="body2" color="text.secondary">
-                                  {' '}({memberNames})
-                                </Typography>
-                              )}
-                            </Typography>
-                            <Typography variant="caption" color={isFull ? "error.main" : "text.secondary"}>
-                              {currentSize}/{maxSize} Mitglieder
-                              {isFull && ' - Voll'}
-                            </Typography>
+              {!isCoordinatorAccess && workPreference === 'group' && (
+                <Box sx={{ mt: 1 }}>
+                  <Alert severity="info" sx={{ mb: 1.5 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.25 }}>
+                      {translations.account.groupInfoTitle}
+                    </Typography>
+                    <Typography variant="body2">
+                      {translations.account.groupInfoBody}
+                    </Typography>
+                  </Alert>
+
+                  <Autocomplete
+                    freeSolo
+                    options={existingGroups.map(group => group.name)}
+                    value={groupName}
+                    onChange={(event, newValue) => {
+                      setGroupName(newValue || '');
+                      if (newUserFieldErrors.group) {
+                        setNewUserFieldErrors((prev) => ({ ...prev, group: '' }));
+                      }
+                    }}
+                    onInputChange={(event, newInputValue) => {
+                      setGroupName(newInputValue);
+                      if (newUserFieldErrors.group) {
+                        setNewUserFieldErrors((prev) => ({ ...prev, group: '' }));
+                      }
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label={translations.account.group}
+                        fullWidth
+                        margin="normal"
+                        required
+                        error={Boolean(newUserFieldErrors.group)}
+                        helperText={newUserFieldErrors.group || translations.account.groupHelper}
+                        disabled={loadingGroups}
+                      />
+                    )}
+                    renderOption={(props, option) => {
+                      const group = existingGroups.find(g => g.name === option);
+                      const memberNames = group?.users?.map(u => u.username).join(', ') || '';
+                      const currentSize = group?.users?.length || 0;
+                      const isFull = currentSize >= MAX_GROUP_SIZE;
+                      
+                      return (
+                        <li {...props}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <GroupIcon fontSize="small" />
+                            <Box>
+                              <Typography variant="body2">
+                                {option}
+                                {memberNames && (
+                                  <Typography component="span" variant="body2" color="text.secondary">
+                                    {' '}({memberNames})
+                                  </Typography>
+                                )}
+                              </Typography>
+                              <Typography variant="caption" color={isFull ? "error.main" : "text.secondary"}>
+                                {currentSize}/{MAX_GROUP_SIZE} {translations.account.groupCapacityLabel}
+                                {isFull && ' - Voll'}
+                              </Typography>
+                            </Box>
                           </Box>
-                        </Box>
-                      </li>
-                    );
-                  }}
-                  noOptionsText="Keine Gruppen gefunden - gib einen Namen ein um eine neue zu erstellen"
-                  loading={loadingGroups}
-                />
+                        </li>
+                      );
+                    }}
+                    noOptionsText={translations.account.noGroupsFoundCreateNew}
+                    loading={loadingGroups}
+                  />
+
+                  <Box
+                    sx={{
+                      mt: 1.25,
+                      px: 1.5,
+                      py: 1.25,
+                      borderRadius: 2,
+                      backgroundColor: 'grey.50',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                      {translations.account.selectedGroupMembers}
+                    </Typography>
+                    {selectedExistingGroup ? (
+                      <>
+                        <Typography variant="body2" sx={{ mb: 0.35 }}>
+                          {selectedExistingGroup.users?.map((user) => user.username).join(', ') || translations.account.newGroupPreview}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {(selectedExistingGroup.users?.length || 0)}/{MAX_GROUP_SIZE} {translations.account.groupCapacityLabel}
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        {trimmedGroupName ? translations.account.newGroupPreview : translations.account.groupHelper}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
               )}
               
               <Button
@@ -374,7 +555,7 @@ const AccountAccessPage = () => {
                 sx={{ mt: 3, mb: 2 }}
                 disabled={newUserLoading}
               >
-                {newUserLoading ? 'Erstelle Konto...' : 'Konto erstellen'}
+                {newUserLoading ? translations.account.creatingAccount : translations.account.createAccountButton}
               </Button>
             </Box>
           </TabPanel>
@@ -391,15 +572,28 @@ const AccountAccessPage = () => {
               </Alert>
             )}
             
-            <Box component="form" onSubmit={handleReturningUserSubmit}>
+            <Box component="form" onSubmit={handleReturningUserSubmit} noValidate>
               <TextField
                 label={translations.account.email}
-                type="email"
+                type="text"
                 fullWidth
                 margin="normal"
                 value={returningEmail}
-                onChange={(e) => setReturningEmail(e.target.value)}
+                onChange={(e) => {
+                  setReturningEmail(e.target.value);
+                  if (returningEmailError) {
+                    setReturningEmailError('');
+                  }
+                }}
                 required
+                error={Boolean(returningEmailError)}
+                helperText={returningEmailError || ' '}
+                autoComplete="email"
+                inputProps={{
+                  inputMode: 'email',
+                  autoCapitalize: 'none',
+                  autoCorrect: 'off',
+                }}
               />
               
               <Button
@@ -409,7 +603,7 @@ const AccountAccessPage = () => {
                 sx={{ mt: 3, mb: 2 }}
                 disabled={returningLoading}
               >
-                {returningLoading ? 'Suche Konto...' : 'Weiter'}
+                {returningLoading ? translations.account.searchingAccount : translations.account.continue}
               </Button>
             </Box>
           </TabPanel>

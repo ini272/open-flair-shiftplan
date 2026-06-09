@@ -8,7 +8,7 @@ from app.models.user import User
 from app.schemas.group import GroupCreate, GroupUpdate
 
 # Default max group size (can be overridden)
-DEFAULT_MAX_GROUP_SIZE = 4
+DEFAULT_MAX_GROUP_SIZE = 3
 
 class CRUDGroup(CRUDBase[Group, GroupCreate, GroupUpdate]):
     """

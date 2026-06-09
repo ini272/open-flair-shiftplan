@@ -1,7 +1,7 @@
 from typing import List, Optional, Union, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, select
+from sqlalchemy import delete, insert, or_, and_, select
 
 from app.dependencies import get_tracer
 from app.crud.base import CRUDBase
@@ -85,6 +85,23 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
             and first_shift.start_time.time() == second_shift.start_time.time()
             and first_shift.end_time.time() == second_shift.end_time.time()
         )
+
+    def get_same_slot_shifts(
+        self,
+        db: Session,
+        *,
+        shift_id: int
+    ) -> List[Shift]:
+        """Return all active shifts that belong to the same concrete slot."""
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return []
+
+        return db.query(Shift).filter(
+            Shift.is_active == True,
+            Shift.start_time == shift.start_time,
+            Shift.end_time == shift.end_time,
+        ).all()
     
     def add_user_to_shift(
         self, 
@@ -273,8 +290,26 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         if user.group_id is not None:
             return None
             
-        # Add user to opted_out_users
-        shift.opted_out_users.append(user)
+        is_sqlite = bool(db.bind) and db.bind.dialect.name == "sqlite"
+
+        for slot_shift in self.get_same_slot_shifts(db, shift_id=shift_id):
+            stmt = insert(shift_user_opt_outs).values(
+                shift_id=slot_shift.id,
+                user_id=user.id,
+            )
+            if is_sqlite:
+                stmt = stmt.prefix_with("OR IGNORE")
+                db.execute(stmt)
+            else:
+                existing = db.execute(
+                    select(shift_user_opt_outs.c.shift_id).where(
+                        shift_user_opt_outs.c.shift_id == slot_shift.id,
+                        shift_user_opt_outs.c.user_id == user.id,
+                    )
+                ).first()
+                if existing is None:
+                    db.execute(stmt)
+
         db.commit()
         db.refresh(shift)
         return shift
@@ -311,11 +346,16 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         if user.group_id is not None:
             return None
             
-        # Remove user from opted_out_users
-        if user in shift.opted_out_users:
-            shift.opted_out_users.remove(user)
-            db.commit()
-            db.refresh(shift)
+        for slot_shift in self.get_same_slot_shifts(db, shift_id=shift_id):
+            db.execute(
+                delete(shift_user_opt_outs).where(
+                    shift_user_opt_outs.c.shift_id == slot_shift.id,
+                    shift_user_opt_outs.c.user_id == user.id,
+                )
+            )
+
+        db.commit()
+        db.refresh(shift)
         return shift
 
     def opt_out_group(
@@ -346,8 +386,26 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         if not group:
             return None
             
-        # Add group to opted_out_groups
-        shift.opted_out_groups.append(group)
+        is_sqlite = bool(db.bind) and db.bind.dialect.name == "sqlite"
+
+        for slot_shift in self.get_same_slot_shifts(db, shift_id=shift_id):
+            stmt = insert(shift_group_opt_outs).values(
+                shift_id=slot_shift.id,
+                group_id=group.id,
+            )
+            if is_sqlite:
+                stmt = stmt.prefix_with("OR IGNORE")
+                db.execute(stmt)
+            else:
+                existing = db.execute(
+                    select(shift_group_opt_outs.c.shift_id).where(
+                        shift_group_opt_outs.c.shift_id == slot_shift.id,
+                        shift_group_opt_outs.c.group_id == group.id,
+                    )
+                ).first()
+                if existing is None:
+                    db.execute(stmt)
+
         db.commit()
         db.refresh(shift)
         return shift
@@ -380,11 +438,16 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         if not group:
             return None
             
-        # Remove group from opted_out_groups
-        if group in shift.opted_out_groups:
-            shift.opted_out_groups.remove(group)
-            db.commit()
-            db.refresh(shift)
+        for slot_shift in self.get_same_slot_shifts(db, shift_id=shift_id):
+            db.execute(
+                delete(shift_group_opt_outs).where(
+                    shift_group_opt_outs.c.shift_id == slot_shift.id,
+                    shift_group_opt_outs.c.group_id == group.id,
+                )
+            )
+
+        db.commit()
+        db.refresh(shift)
         return shift
 
     def is_user_opted_out(
@@ -437,17 +500,14 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         """
         Return True if a user is available for any shift in the same day/timeslot.
 
-        This collapses parallel Weinzelt/Bierwagen shifts into a single availability slot.
+        Slot-level opt-outs are mirrored across parallel shifts, so this remains
+        aligned with the UI semantics of "not possible for this whole slot".
         """
         shift = self.get(db, id=shift_id)
         if not shift:
             return False
 
-        same_slot_shifts = db.query(Shift).filter(
-            Shift.is_active == True,
-            Shift.start_time == shift.start_time,
-            Shift.end_time == shift.end_time,
-        ).all()
+        same_slot_shifts = self.get_same_slot_shifts(db, shift_id=shift_id)
 
         return any(
             not self.is_user_opted_out(db, shift_id=parallel_shift.id, user_id=user_id)
@@ -535,9 +595,11 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         from app.crud.user import user as user_crud
         all_users = user_crud.get_multi(db)
         
-        # Filter out opted-out users
+        # Filter out users who are not available for this full slot.
         available_users = []
         for user in all_users:
+            if not user.is_active or user.is_coordinator:
+                continue
             if self.is_user_available_for_slot(db, shift_id=shift_id, user_id=user.id):
                 available_users.append(user)
                 

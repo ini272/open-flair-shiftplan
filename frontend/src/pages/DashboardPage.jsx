@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
-  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Stack, ToggleButton, ToggleButtonGroup, Link
+  Container, Box, Typography, Button, Paper, Alert, Snackbar, Tabs, Tab, Stack, ToggleButton, ToggleButtonGroup, Link,
+  Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -28,6 +29,8 @@ const DashboardPage = () => {
   const [userGroup, setUserGroup] = useState(null);
   const [locationPreference, setLocationPreference] = useState('both');
   const [isSavingLocationPreference, setIsSavingLocationPreference] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const navigate = useNavigate();
 
   const getShiftSlotKey = useCallback((shift) => {
@@ -80,10 +83,13 @@ const DashboardPage = () => {
         // Coordinator capabilities require both the coordinator account and coordinator session.
         const hasCoordinatorAccess = authRole === 'coordinator' && Boolean(userResponse.data.is_coordinator);
         setIsCoordinator(hasCoordinatorAccess);
+        setCurrentTab(hasCoordinatorAccess ? 1 : 0);
 
         if (hasCoordinatorAccess) {
           const allUsersResponse = await userService.getUsers();
-          setAllUsers(allUsersResponse.data);
+          setAllUsers(
+            allUsersResponse.data.filter((entry) => entry.is_active && !entry.is_coordinator)
+          );
         } else {
           setAllUsers([]);
         }
@@ -110,9 +116,7 @@ const DashboardPage = () => {
     const fetchUserGroup = async () => {
       if (user?.group_id && !userGroup) {
         try {
-          console.log('Fetching group details for group_id:', user.group_id);
           const response = await groupService.getGroup(user.group_id);
-          console.log('Group details:', response.data);
           setUserGroup(response.data);
           setLocationPreference(response.data.location_preference || 'both');
         } catch (error) {
@@ -134,6 +138,32 @@ const DashboardPage = () => {
       console.error('Error logging out:', error);
     }
   };
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    setIsDeletingAccount(true);
+
+    try {
+      await userService.deleteUser(user.id);
+      await authService.logout();
+      localStorage.removeItem('user_id');
+      localStorage.removeItem('username');
+      navigate('/login');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      setSnackbar({
+        open: true,
+        message: translations.account.deleteFailed,
+        severity: 'error',
+      });
+    } finally {
+      setIsDeletingAccount(false);
+      setDeleteDialogOpen(false);
+    }
+  }, [navigate, user]);
 
   // Memoize the available shifts calculation
   const availableShiftIds = useMemo(() => {
@@ -372,7 +402,7 @@ const DashboardPage = () => {
       console.error('Batch operation failed:', error);
       setSnackbar({
         open: true,
-        message: 'Batch operation failed',
+        message: translations.shifts.batchOperationFailed,
         severity: 'error'
       });
     } finally {
@@ -397,7 +427,7 @@ const DashboardPage = () => {
     return (
       <Container>
         <Box sx={{ mt: 4, textAlign: 'center' }}>
-          <Typography variant="h5">{translations.loading}</Typography>
+          <Typography variant="h5">{translations.messages.loading}</Typography>
         </Box>
       </Container>
     );
@@ -408,9 +438,19 @@ const DashboardPage = () => {
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Logo size="header" />
 
-        <Button variant="outlined" size="small" onClick={handleLogout}>
-          {translations.logout}
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            {translations.account.deleteAccount}
+          </Button>
+          <Button variant="outlined" size="small" onClick={handleLogout}>
+            {translations.logout}
+          </Button>
+        </Stack>
       </Box>
 
       {/* Tab Navigation */}
@@ -426,6 +466,19 @@ const DashboardPage = () => {
       {/* Tab Content */}
       {currentTab === 0 && (
         <Box>
+          {isCoordinator && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {translations.coordinator.coordinatorShiftSelectionDisabled}
+            </Alert>
+          )}
+
+          <Box
+            sx={isCoordinator ? {
+              opacity: 0.5,
+              pointerEvents: 'none',
+              userSelect: 'none',
+            } : undefined}
+          >
           <Paper
             variant="outlined"
             sx={{
@@ -577,7 +630,7 @@ const DashboardPage = () => {
               value={locationPreference}
               exclusive
               onChange={handleLocationChange}
-              aria-label="location preference"
+              aria-label={translations.shifts.locationPreferenceTitle}
               sx={{ mb: 2 }}
               disabled={isSavingLocationPreference}
             >
@@ -616,6 +669,7 @@ const DashboardPage = () => {
             onBatchDayToggle={handleBatchDayToggle}
             batchPendingDays={batchPendingDays}
           />
+          </Box>
         </Box>
       )}
 
@@ -640,6 +694,34 @@ const DashboardPage = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !isDeletingAccount && setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{translations.account.deleteAccount}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {translations.account.deleteAccountConfirm}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={isDeletingAccount}>
+            {translations.cancel}
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeleteAccount}
+            disabled={isDeletingAccount}
+            startIcon={isDeletingAccount ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {isDeletingAccount ? translations.account.deletingAccount : translations.account.deleteAccount}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

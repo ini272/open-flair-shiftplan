@@ -33,6 +33,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import PrintIcon from '@mui/icons-material/Print';
 import { groupService, shiftService } from '../services/api';
+import { getTeamColor } from '../utils/teamColors';
 import { translations } from '../utils/translations';
 
 const LOCATION_META = {
@@ -160,8 +161,8 @@ const CompactAssignmentsGrid = styled(Box)(({ theme }) => ({
 }));
 
 const CompactNameTag = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'assignmentTone',
-})(({ assignmentTone, theme }) => ({
+  shouldForwardProp: (prop) => !['assignmentTone', 'teamAccentColor', 'teamSurfaceColor'].includes(prop),
+})(({ assignmentTone, teamAccentColor, teamSurfaceColor, theme }) => ({
   display: 'flex',
   alignItems: 'center',
   minWidth: 0,
@@ -169,12 +170,23 @@ const CompactNameTag = styled(Box, {
   padding: theme.spacing(0.5, 0.75),
   borderRadius: theme.spacing(1),
   border: `1px solid ${assignmentTone === 'group'
-    ? alpha(theme.palette.secondary.main, 0.3)
+    ? teamAccentColor || alpha(theme.palette.secondary.main, 0.3)
     : theme.palette.divider}`,
   backgroundColor: assignmentTone === 'group'
-    ? alpha(theme.palette.secondary.main, 0.12)
+    ? teamSurfaceColor || alpha(theme.palette.secondary.main, 0.12)
     : theme.palette.background.paper,
   overflow: 'hidden',
+  position: 'relative',
+  color: theme.palette.text.primary,
+  '&::before': assignmentTone === 'group' ? {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: teamAccentColor || theme.palette.secondary.main,
+  } : undefined,
   '@media print': {
     minHeight: 24,
     padding: theme.spacing(0.35, 0.55),
@@ -364,6 +376,7 @@ const getShiftPreviewEntries = (shift) => {
       key: `group-${group.name}-${user.id}`,
       label: user.username,
       assignmentTone: 'group',
+      groupName: group.name,
       helper: group.name,
     }))
   );
@@ -399,7 +412,15 @@ const getPrintEntryColumns = (entries) => {
   });
 };
 
-const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChange }) => {
+const PRINT_SHIFT_DIVIDER = '1.8px solid #000000';
+
+const CoordinatorShiftGrid = ({
+  shifts,
+  generatedAssignments,
+  maxShiftsPerUser,
+  teamColorMap,
+  onAssignmentsChange,
+}) => {
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState(null);
   const [availableUsers, setAvailableUsers] = useState([]);
@@ -430,7 +451,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
         if (!uniqueGroups[assignment.group_name]) {
           uniqueGroups[assignment.group_name] = {
             name: assignment.group_name,
-            users: []
+            users: [],
           };
         }
 
@@ -445,12 +466,22 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
         users: userAssignments.map((assignment) => ({
           id: assignment.user_id,
           username: assignment.username,
-          assignedVia: 'individual'
+          assignedVia: 'individual',
         })),
         groups: Object.values(uniqueGroups),
       };
     });
   }, [generatedAssignments, shifts]);
+
+  const assignmentCountByUserId = useMemo(() => {
+    const counts = new Map();
+
+    (generatedAssignments || []).forEach((assignment) => {
+      counts.set(assignment.user_id, (counts.get(assignment.user_id) || 0) + 1);
+    });
+
+    return counts;
+  }, [generatedAssignments]);
 
   const { dayPlans, locationColumns } = useMemo(() => {
     const grouped = {};
@@ -586,9 +617,17 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
         })
       );
 
-      setAvailableUsers(individualUsers);
+      setAvailableUsers(
+        individualUsers.filter(
+          (user) => (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
+        )
+      );
       setAvailableGroups(
         availableGroupsWithUsers.filter((group) => group.users && group.users.length > 0)
+          .filter((group) => group.users.every((user) => !user.is_coordinator))
+          .filter((group) => group.users.every(
+            (user) => (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
+          ))
       );
     } catch (loadError) {
       console.error('Error loading available users/groups:', loadError);
@@ -791,13 +830,20 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
 
                     {currentStaff > 0 ? (
                       <CompactAssignmentsGrid>
-                        {getShiftPreviewEntries(shift).map((entry) => (
+                        {getShiftPreviewEntries(shift).map((entry) => {
+                          const teamColor = entry.groupName ? getTeamColor(entry.groupName, teamColorMap) : null;
+
+                          return (
                           <Tooltip
                             key={entry.key}
                             title={entry.helper}
                             enterDelay={300}
                           >
-                            <CompactNameTag assignmentTone={entry.assignmentTone}>
+                            <CompactNameTag
+                              assignmentTone={entry.assignmentTone}
+                              teamAccentColor={teamColor?.border}
+                              teamSurfaceColor={teamColor?.surface}
+                            >
                               <Typography
                                 variant="body2"
                                 sx={{
@@ -806,7 +852,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
-                                  fontWeight: entry.assignmentTone === 'group' ? 700 : 500,
+                                  fontWeight: 500,
                                   '@media print': {
                                     fontSize: '0.74rem',
                                   },
@@ -816,7 +862,8 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                               </Typography>
                             </CompactNameTag>
                           </Tooltip>
-                        ))}
+                          );
+                        })}
                       </CompactAssignmentsGrid>
                     ) : (
                       <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
@@ -927,7 +974,7 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                   sx={{
                     display: 'grid',
                     gridTemplateColumns: '20mm repeat(3, minmax(0, 1fr)) 10mm',
-                    borderBottom: '1px solid #000000',
+                    borderBottom: PRINT_SHIFT_DIVIDER,
                     '&:last-of-type': {
                       borderBottom: 'none',
                     },
@@ -953,36 +1000,41 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                     <Box
                       key={`print-col-${location.key}-${slot.key}-${columnIndex}`}
                       sx={{
-                        px: 0.55,
-                        py: 0.35,
                         borderRight: '1px solid #000000',
                         minHeight: '19mm',
                         display: 'grid',
                         gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
-                        alignItems: 'center',
-                        gap: 0.15,
                         overflow: 'hidden',
                       }}
                     >
                       {columnEntries.map((entry, rowIndex) => (
-                        <Typography
+                        <Box
                           key={entry ? entry.key : `empty-${location.key}-${slot.key}-${columnIndex}-${rowIndex}`}
-                          variant="body2"
                           sx={{
-                            fontSize: '0.72rem',
-                            lineHeight: 1.08,
-                            fontWeight: 500,
-                            color: '#000000',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            minHeight: '6.1mm',
+                            px: 0.55,
+                            py: 0.35,
+                            borderBottom: rowIndex === 0 ? '1px solid #000000' : 'none',
+                            minHeight: '9.5mm',
                             display: 'flex',
                             alignItems: 'center',
                           }}
                         >
-                          {entry?.label || ''}
-                        </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: '0.72rem',
+                              lineHeight: 1.08,
+                              fontWeight: 500,
+                              color: '#000000',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              width: '100%',
+                            }}
+                          >
+                            {entry?.label || ''}
+                          </Typography>
+                        </Box>
                       ))}
                     </Box>
                   ))}
@@ -1145,10 +1197,12 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>
-          {translations.grid.editDialogTitle}
+        <DialogTitle component="div">
+          <Typography variant="h6" component="div">
+            {translations.grid.editDialogTitle}
+          </Typography>
           {selectedShift && (
-            <Typography variant="subtitle2" color="text.secondary">
+            <Typography variant="body2" component="div" color="text.secondary">
               {`${selectedShift.title} • ${formatTime(selectedShift.start_time)}-${formatTime(selectedShift.end_time)}`}
             </Typography>
           )}
@@ -1166,7 +1220,18 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                   <DialogAssignmentRow key={`dialog-group-${group.name}`}>
                     <Box sx={{ minWidth: 0 }}>
                       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.25 }}>
-                        <GroupIcon color="secondary" fontSize="small" />
+                        <Avatar
+                          sx={{
+                            width: 22,
+                            height: 22,
+                            fontSize: '0.8rem',
+                            color: '#ffffff',
+                            backgroundColor: getTeamColor(group.name, teamColorMap).accent,
+                            border: `1px solid ${getTeamColor(group.name, teamColorMap).border}`,
+                          }}
+                        >
+                          <GroupIcon fontSize="inherit" />
+                        </Avatar>
                         <Typography variant="body2" sx={{ fontWeight: 700 }}>
                           {group.name}
                         </Typography>
@@ -1190,9 +1255,11 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                   <DialogAssignmentRow key={`dialog-user-${user.id}`}>
                     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
                       <PersonIcon color="action" fontSize="small" />
-                      <Typography variant="body2">
-                        {user.username}
-                      </Typography>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2">
+                          {user.username}
+                        </Typography>
+                      </Box>
                     </Stack>
                     <IconButton
                       size="small"
@@ -1243,7 +1310,13 @@ const CoordinatorShiftGrid = ({ shifts, generatedAssignments, onAssignmentsChang
                     <ListItem key={`group-${group.id}`} disablePadding>
                       <ListItemButton onClick={() => handleAddGroup(group.id)}>
                         <ListItemAvatar>
-                          <Avatar sx={{ backgroundColor: 'secondary.main' }}>
+                          <Avatar
+                            sx={{
+                              color: '#ffffff',
+                              backgroundColor: getTeamColor(group.name, teamColorMap).accent,
+                              border: `1px solid ${getTeamColor(group.name, teamColorMap).border}`,
+                            }}
+                          >
                             <GroupIcon />
                           </Avatar>
                         </ListItemAvatar>

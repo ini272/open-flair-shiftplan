@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const DEV_API_PORT = import.meta.env.VITE_API_PORT || '8000';
+const DEFAULT_MAX_GROUP_SIZE = 3;
 
 const API_URL = import.meta.env.VITE_API_URL || (
   import.meta.env.PROD
@@ -39,7 +40,7 @@ export const groupService = {
   createGroup: (groupData) => api.post('/groups/', groupData),
   updateGroup: (id, groupData) => api.put(`/groups/${id}`, groupData),
   deleteGroup: (id) => api.delete(`/groups/${id}`),
-  addUserToGroup: (groupId, userId, maxGroupSize = 4) => api.post(`/groups/${groupId}/users/${userId}`, null, {
+  addUserToGroup: (groupId, userId, maxGroupSize = DEFAULT_MAX_GROUP_SIZE) => api.post(`/groups/${groupId}/users/${userId}`, null, {
     params: { max_group_size: maxGroupSize }
   }),
   removeUserFromGroup: (userId) => api.delete(`/groups/users/${userId}`),

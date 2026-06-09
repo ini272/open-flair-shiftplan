@@ -9,6 +9,8 @@ from app.crud.group import group as group_crud
 from app.crud.user import user as user_crud
 from app.security import AuthSession
 
+DEFAULT_MAX_GROUP_SIZE = 3
+
 # Create a router for group-related endpoints
 router = APIRouter(
     prefix="/groups",
@@ -145,7 +147,7 @@ def delete_group(
 def add_user_to_group(
     group_id: int,
     user_id: int,
-    max_group_size: int = 4,  # Add this parameter
+    max_group_size: int = DEFAULT_MAX_GROUP_SIZE,
     db: Session = Depends(get_db),
     auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
@@ -174,6 +176,14 @@ def add_user_to_group(
             span.add_event("user_not_found", {"user_id": user_id})
             span.set_attribute("error", "User not found")
             raise HTTPException(status_code=404, detail="User not found")
+
+        if user.is_coordinator:
+            span.add_event("coordinator_group_membership_blocked", {"user_id": user_id})
+            span.set_attribute("error", "Coordinator accounts cannot join groups")
+            raise HTTPException(
+                status_code=400,
+                detail="Coordinator accounts cannot join groups",
+            )
 
         ensure_self_or_coordinator(auth_session, user_id)
         

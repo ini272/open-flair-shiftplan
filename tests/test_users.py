@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+
+
 def test_create_user(authenticated_client):
     """Test creating a new user."""
     response = authenticated_client.post(
@@ -183,3 +186,77 @@ def test_coordinator_user_requires_coordinator_code(authenticated_client):
 
     assert response.status_code == 201
     assert response.json()["is_coordinator"] is True
+
+
+def test_coordinator_accounts_cannot_be_manually_assigned_to_shifts(client):
+    """Coordinator accounts should stay out of shift assignment and availability lists."""
+    client.post("/auth/login", json={"access_code": "koordination2026"})
+    coordinator_response = client.post(
+        "/users/",
+        json={
+            "email": "plan-coordinator@example.com",
+            "username": "plancoordinator",
+        },
+    )
+    coordinator_id = coordinator_response.json()["id"]
+
+    client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    participant_response = client.post(
+        "/users/",
+        json={
+            "email": "plan-participant@example.com",
+            "username": "planparticipant",
+        },
+    )
+    participant_id = participant_response.json()["id"]
+
+    client.post("/auth/login", json={"access_code": "koordination2026"})
+    start_time = datetime(2026, 8, 6, 18, 0)
+    end_time = start_time + timedelta(hours=2)
+    shift_response = client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Assignment Shift",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 2,
+        },
+    )
+    shift_id = shift_response.json()["id"]
+
+    available_users_response = client.get(f"/shifts/available-users/{shift_id}")
+    available_user_ids = {user["id"] for user in available_users_response.json()}
+
+    blocked_assignment_response = client.post(
+        "/shifts/users/",
+        json={"shift_id": shift_id, "user_id": coordinator_id},
+    )
+    successful_assignment_response = client.post(
+        "/shifts/users/",
+        json={"shift_id": shift_id, "user_id": participant_id},
+    )
+
+    assert participant_id in available_user_ids
+    assert coordinator_id not in available_user_ids
+    assert blocked_assignment_response.status_code == 400
+    assert successful_assignment_response.status_code == 200
+
+
+def test_coordinator_accounts_cannot_join_groups(client):
+    """Coordinator accounts should stay outside participant teams."""
+    client.post("/auth/login", json={"access_code": "koordination2026"})
+    group_response = client.post("/groups/", json={"name": "Participant Team"})
+    group_id = group_response.json()["id"]
+
+    coordinator_response = client.post(
+        "/users/",
+        json={
+            "email": "group-blocked-coordinator@example.com",
+            "username": "groupblockedcoordinator",
+        },
+    )
+    coordinator_id = coordinator_response.json()["id"]
+
+    add_response = client.post(f"/groups/{group_id}/users/{coordinator_id}")
+
+    assert add_response.status_code == 400
