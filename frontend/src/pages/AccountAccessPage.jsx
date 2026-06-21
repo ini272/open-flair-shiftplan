@@ -434,13 +434,21 @@ const AccountAccessPage = () => {
               
               {!isCoordinatorAccess && (
                 <FormControl component="fieldset" margin="normal">
-                  <FormLabel component="legend">Wie möchtest du arbeiten?</FormLabel>
+                  <FormLabel component="legend">{translations.account.workPreference}</FormLabel>
                   <RadioGroup
                     value={workPreference}
                     onChange={(e) => setWorkPreference(e.target.value)}
                   >
-                    <FormControlLabel value="alone" control={<Radio />} label="Ich arbeite alleine" />
-                    <FormControlLabel value="group" control={<Radio />} label="Ich arbeite in einer Gruppe" />
+                    <FormControlLabel
+                      value="alone"
+                      control={<Radio />}
+                      label={translations.account.workAlone}
+                    />
+                    <FormControlLabel
+                      value="group"
+                      control={<Radio />}
+                      label={translations.account.workInGroup}
+                    />
                   </RadioGroup>
                 </FormControl>
               )}

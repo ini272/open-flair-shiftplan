@@ -631,7 +631,37 @@ const DashboardPage = () => {
               exclusive
               onChange={handleLocationChange}
               aria-label={translations.shifts.locationPreferenceTitle}
-              sx={{ mb: 2 }}
+              sx={(theme) => ({
+                mb: 2,
+                borderRadius: 2,
+                overflow: 'hidden',
+                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)',
+                '& .MuiToggleButtonGroup-grouped': {
+                  px: 1.75,
+                  py: 0.95,
+                  minHeight: 46,
+                  border: `2px solid ${theme.palette.divider} !important`,
+                  borderRadius: '0 !important',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                },
+                '& .MuiToggleButtonGroup-grouped:not(:first-of-type)': {
+                  marginLeft: '-2px',
+                },
+                '& .Mui-selected': {
+                  backgroundColor: theme.palette.primary.light,
+                  color: theme.palette.primary.contrastText,
+                  borderColor: `${theme.palette.primary.main} !important`,
+                },
+                '& .MuiToggleButtonGroup-grouped:first-of-type': {
+                  borderTopLeftRadius: theme.spacing(1.5),
+                  borderBottomLeftRadius: theme.spacing(1.5),
+                },
+                '& .MuiToggleButtonGroup-grouped:last-of-type': {
+                  borderTopRightRadius: theme.spacing(1.5),
+                  borderBottomRightRadius: theme.spacing(1.5),
+                },
+              })}
               disabled={isSavingLocationPreference}
             >
               <ToggleButton value="both">

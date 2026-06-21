@@ -53,6 +53,38 @@ def test_user_and_group_location_preference_defaults_and_updates(authenticated_c
     assert updated_group_response.json()["location_preference"] == "weinzelt"
 
 
+def test_group_member_can_update_group_location_preference(authenticated_client):
+    group_id = authenticated_client.post(
+        "/groups/",
+        json={"name": "Shared Preference Group"},
+    ).json()["id"]
+
+    user_data = create_participant_user(
+        authenticated_client,
+        "group-location-member@example.com",
+        "grouplocationmember",
+    )
+    user_id = user_data["id"]
+
+    login_as_coordinator(authenticated_client)
+    add_response = authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
+    assert add_response.status_code == 200
+
+    login_as_participant(authenticated_client)
+    lookup_response = authenticated_client.post(
+        "/users/lookup",
+        json={"email": "group-location-member@example.com"},
+    )
+    assert lookup_response.status_code == 200
+
+    update_response = authenticated_client.put(
+        f"/groups/{group_id}",
+        json={"location_preference": "bierwagen"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["location_preference"] == "bierwagen"
+
+
 def test_slot_opt_out_is_mirrored_to_parallel_shifts(authenticated_client):
     user_id = create_participant_user(
         authenticated_client,

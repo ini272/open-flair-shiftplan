@@ -1,13 +1,34 @@
 from datetime import datetime, timedelta
 
+def login_as_participant(client):
+    response = client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    assert response.status_code == 200
+
+
+def login_as_coordinator(client):
+    response = client.post("/auth/login", json={"access_code": "koordination2026"})
+    assert response.status_code == 200
+
+
+def create_participant_user(client, email, username):
+    login_as_participant(client)
+    response = client.post(
+        "/users/",
+        json={"email": email, "username": username},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
 def test_user_opt_out(authenticated_client):
     """Test opting a user out of a shift."""
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "optout@example.com", "username": "optoutuser"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "optout@example.com",
+        "optoutuser",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -50,11 +71,12 @@ def test_user_opt_out(authenticated_client):
 def test_user_opt_in(authenticated_client):
     """Test opting a user back into a shift."""
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "optin@example.com", "username": "optinuser"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "optin@example.com",
+        "optinuser",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -111,11 +133,12 @@ def test_user_in_group_cannot_have_individual_opt_outs(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create a user and add to group
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "noindividual@example.com", "username": "noindividual"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "noindividual@example.com",
+        "noindividual",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add user to group
     authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
@@ -148,17 +171,18 @@ def test_user_in_group_cannot_have_individual_opt_outs(authenticated_client):
 def test_available_users(authenticated_client):
     """Test getting available users for a shift."""
     # Create users
-    user1_response = authenticated_client.post(
-        "/users/",
-        json={"email": "available1@example.com", "username": "available1"}
-    )
-    user1_id = user1_response.json()["id"]
+    user1_id = create_participant_user(
+        authenticated_client,
+        "available1@example.com",
+        "available1",
+    )["id"]
     
-    user2_response = authenticated_client.post(
-        "/users/",
-        json={"email": "available2@example.com", "username": "available2"}
-    )
-    user2_id = user2_response.json()["id"]
+    user2_id = create_participant_user(
+        authenticated_client,
+        "available2@example.com",
+        "available2",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)

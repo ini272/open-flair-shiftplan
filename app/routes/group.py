@@ -2,7 +2,14 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import ensure_self_or_coordinator, get_tracer, get_db, require_auth, require_coordinator
+from app.dependencies import (
+    ensure_group_member_or_coordinator,
+    ensure_self_or_coordinator,
+    get_tracer,
+    get_db,
+    require_auth,
+    require_coordinator,
+)
 from app.schemas.group import Group, GroupCreate, GroupUpdate, GroupWithUsers
 from app.schemas.user import User
 from app.crud.group import group as group_crud
@@ -99,7 +106,7 @@ def update_group(
     group_id: int, 
     group_in: GroupUpdate, 
     db: Session = Depends(get_db),
-    _: AuthSession = Depends(require_coordinator),
+    auth_session: AuthSession = Depends(require_auth),
 ) -> Any:
     """
     Update a group.
@@ -111,6 +118,21 @@ def update_group(
         if not group:
             span.set_attribute("error", "Group not found")
             raise HTTPException(status_code=404, detail="Group not found")
+
+        is_location_preference_only_update = (
+            group_in.location_preference is not None
+            and group_in.name is None
+            and group_in.is_active is None
+        )
+
+        if is_location_preference_only_update:
+            ensure_group_member_or_coordinator(db, auth_session, group_id)
+        elif not auth_session.is_coordinator:
+            span.set_attribute("error", "Coordinator access required")
+            raise HTTPException(
+                status_code=403,
+                detail="Coordinator access required",
+            )
         
         # If name is being updated, check it doesn't conflict
         if group_in.name and group_in.name != group.name:

@@ -1,5 +1,25 @@
 from datetime import datetime, timedelta
 
+def login_as_participant(client):
+    response = client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    assert response.status_code == 200
+
+
+def login_as_coordinator(client):
+    response = client.post("/auth/login", json={"access_code": "koordination2026"})
+    assert response.status_code == 200
+
+
+def create_participant_user(client, email, username):
+    login_as_participant(client)
+    response = client.post(
+        "/users/",
+        json={"email": email, "username": username},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
 def test_group_opt_out(authenticated_client):
     """Test opting a group out of a shift."""
     # Create a group
@@ -10,21 +30,22 @@ def test_group_opt_out(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create users and add to group
-    user1_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupuser1@example.com", "username": "groupuser1"}
-    )
-    user1_id = user1_response.json()["id"]
+    user1_id = create_participant_user(
+        authenticated_client,
+        "groupuser1@example.com",
+        "groupuser1",
+    )["id"]
     
-    user2_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupuser2@example.com", "username": "groupuser2"}
-    )
-    user2_id = user2_response.json()["id"]
+    user2_id = create_participant_user(
+        authenticated_client,
+        "groupuser2@example.com",
+        "groupuser2",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add users to group
-    authenticated_client.post(f"/groups/{group_id}/users/{user1_id}")
-    authenticated_client.post(f"/groups/{group_id}/users/{user2_id}")
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user1_id}").status_code == 200
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user2_id}").status_code == 200
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -77,14 +98,15 @@ def test_group_opt_in(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create users and add to group
-    user1_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupoptin1@example.com", "username": "groupoptin1"}
-    )
-    user1_id = user1_response.json()["id"]
+    user1_id = create_participant_user(
+        authenticated_client,
+        "groupoptin1@example.com",
+        "groupoptin1",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add user to group
-    authenticated_client.post(f"/groups/{group_id}/users/{user1_id}")
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user1_id}").status_code == 200
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -164,11 +186,12 @@ def test_user_inherits_group_opt_outs_when_joining(authenticated_client):
     )
     
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "inherit@example.com", "username": "inherit"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "inherit@example.com",
+        "inherit",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Check opt-out status before joining group (should be False)
     status_before = authenticated_client.get(f"/shifts/opt-out-status/{shift_id}/{user_id}")
@@ -176,7 +199,7 @@ def test_user_inherits_group_opt_outs_when_joining(authenticated_client):
     assert status_before.json()["is_opted_out"] is False
     
     # Add user to group
-    authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user_id}").status_code == 200
     
     # Check opt-out status after joining group (should be True)
     status_after = authenticated_client.get(f"/shifts/opt-out-status/{shift_id}/{user_id}")
@@ -193,14 +216,15 @@ def test_user_loses_group_opt_outs_when_leaving(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create a user and add to group
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "leavegroup@example.com", "username": "leavegroup"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "leavegroup@example.com",
+        "leavegroup",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add user to group
-    authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user_id}").status_code == 200
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -248,21 +272,23 @@ def test_group_available_users(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create a user in the group
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupavailable@example.com", "username": "groupavailable"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "groupavailable@example.com",
+        "groupavailable",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add user to group
-    authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user_id}").status_code == 200
     
     # Create a user not in any group
-    solo_user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "soloavailable@example.com", "username": "soloavailable"}
-    )
-    solo_user_id = solo_user_response.json()["id"]
+    solo_user_id = create_participant_user(
+        authenticated_client,
+        "soloavailable@example.com",
+        "soloavailable",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
