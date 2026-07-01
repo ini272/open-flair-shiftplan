@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime, timedelta
 import random
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import (
@@ -15,13 +15,14 @@ from app.dependencies import (
 )
 from app.schemas.shift import (
     Shift, ShiftCreate, ShiftUpdate, ShiftWithAssignees,
-    ShiftUserBase, ShiftGroupBase
+    ShiftUserBase, ShiftGroupBase, ShiftXlsxExportRequest
 )
 from app.schemas.user import User
 from app.crud.shift import shift as shift_crud
 from app.crud.user import user as user_crud
 from app.crud.group import group as group_crud
 from app.security import AuthSession
+from app.xlsx_export import build_shift_plan_xlsx
 
 # Create a router for shift-related endpoints
 router = APIRouter(
@@ -79,18 +80,27 @@ def get_shift_location_key(shift) -> str:
     return "both"
 
 
-def is_weekend_evening_shift(shift) -> bool:
+def shift_starts_in_evening_window(shift) -> bool:
+    """Return True for shifts that start at or after 20:00 or after midnight."""
+    return (
+        (shift.start_time.hour, shift.start_time.minute) >= (20, 0)
+        or shift.start_time.hour < 6
+    )
+
+
+def is_under_16_restricted_shift(shift) -> bool:
+    """Users under 16 may not work shifts from 20:00 onward."""
+    return shift_starts_in_evening_window(shift)
+
+
+def is_priority_evening_shift(shift) -> bool:
     """
-    Friday/Saturday evening shifts include the night after midnight.
+    Thursday/Friday/Saturday evening shifts include the night after midnight.
 
     This treats 00:00-02:00 slots as part of the previous festival night.
     """
     planner_day = get_planner_day_start(shift)
-    shift_starts_in_evening_window = (
-        (shift.start_time.hour, shift.start_time.minute) >= (20, 0)
-        or shift.start_time.hour < 6
-    )
-    return planner_day.weekday() in (4, 5) and shift_starts_in_evening_window
+    return planner_day.weekday() in (3, 4, 5) and shift_starts_in_evening_window(shift)
 
 
 def get_max_consecutive_slots(slot_positions: List[int]) -> int:
@@ -271,6 +281,34 @@ def clear_all_assignments(
             "assignments_cleared": assignments_cleared
         }
 
+
+@router.post("/export/xlsx")
+def export_shift_plan_xlsx(
+    export_request: Optional[ShiftXlsxExportRequest] = None,
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
+) -> Response:
+    """Export the coordinator plan as an XLSX workbook with one sheet per day."""
+    with tracer.start_as_current_span("export-shift-plan-xlsx") as span:
+        shifts = shift_crud.get_multi(db, skip=0, limit=1000)
+        assignments = export_request.assignments if export_request else None
+
+        span.set_attribute("shifts.count", len(shifts))
+        span.set_attribute("export.assignments_override", assignments is not None)
+        if assignments is not None:
+            span.set_attribute("export.assignments_count", len(assignments))
+
+        workbook_bytes = build_shift_plan_xlsx(shifts=shifts, assignments=assignments)
+        headers = {
+            "Content-Disposition": 'attachment; filename="open-flair-schichtplan.xlsx"'
+        }
+
+        return Response(
+            content=workbook_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
+
 @router.get("/{shift_id}", response_model=ShiftWithAssignees)
 def read_shift(
     shift_id: int,
@@ -367,6 +405,14 @@ def add_user_to_shift(
                 detail="Coordinator accounts cannot be assigned to shifts",
             )
 
+        if user.is_under_16 and is_under_16_restricted_shift(shift):
+            span.add_event("under_16_evening_assignment_blocked", {"user_id": assignment.user_id})
+            span.set_attribute("error", "Users under 16 cannot be assigned to shifts from 20:00 onward")
+            raise HTTPException(
+                status_code=400,
+                detail="Users under 16 cannot be assigned to shifts from 20:00 onward",
+            )
+
         # Check capacity
         span.add_event("checking_shift_capacity", {
             "current_users": shift.current_user_count,
@@ -437,6 +483,14 @@ def add_group_to_shift(
             raise HTTPException(
                 status_code=400,
                 detail="Groups with coordinator accounts cannot be assigned to shifts",
+            )
+
+        if is_under_16_restricted_shift(shift) and any(user.is_under_16 for user in group.users):
+            span.add_event("under_16_group_evening_assignment_blocked", {"group_id": assignment.group_id})
+            span.set_attribute("error", "Groups with users under 16 cannot be assigned to shifts from 20:00 onward")
+            raise HTTPException(
+                status_code=400,
+                detail="Groups with users under 16 cannot be assigned to shifts from 20:00 onward",
             )
 
         # Add group to shift (this will check capacity)
@@ -715,6 +769,11 @@ def generate_shift_plan(
             if unit["size"] > capacity:
                 return False
 
+            if is_under_16_restricted_shift(shift) and any(
+                user.is_under_16 for user in unit["members"]
+            ):
+                return False
+
             return all(
                 not shift_crud.is_user_opted_out(db, shift_id=shift.id, user_id=user.id)
                 for user in unit["members"]
@@ -739,7 +798,7 @@ def generate_shift_plan(
                 available_slot_keys.add(shift_slot_key[shift.id])
                 available_day_keys.add(get_shift_day_key(shift))
 
-                if is_weekend_evening_shift(shift):
+                if is_priority_evening_shift(shift):
                     available_evening_slots.add(shift_slot_key[shift.id])
 
             available_shift_ids = {
@@ -765,7 +824,7 @@ def generate_shift_plan(
         sorted_shifts = sorted(
             active_shifts,
             key=lambda shift: (
-                0 if is_weekend_evening_shift(shift) else 1,
+                0 if is_priority_evening_shift(shift) else 1,
                 shift_slot_index[shift.id],
                 potential_unit_count[shift.id],
                 shift.start_time.date(),
@@ -835,8 +894,8 @@ def generate_shift_plan(
             if has_single_slot_gap(candidate_slots):
                 score -= 45
 
-            # Friday/Saturday >= 20:00 should be shared fairly across planning units.
-            if is_weekend_evening_shift(shift):
+            # Thursday/Friday/Saturday >= 20:00 should be shared fairly across planning units.
+            if is_priority_evening_shift(shift):
                 if unit_evening_count[unit_key] == 0:
                     score += 55
                     if unit_available_evening_counts[unit_key] == 1:
@@ -941,7 +1000,7 @@ def generate_shift_plan(
                     shift_slot_index[shift.id]
                 )
 
-                if is_weekend_evening_shift(shift):
+                if is_priority_evening_shift(shift):
                     unit_evening_count[selected_unit_key] += 1
 
                 if selected_unit["type"] == "group":
@@ -1297,6 +1356,10 @@ def get_available_users(
         
         # Get available users
         available_users = shift_crud.get_available_users(db, shift_id=shift_id)
-        
+        if is_under_16_restricted_shift(shift):
+            available_users = [
+                user for user in available_users
+                if not user.is_under_16
+            ]
 
         return available_users

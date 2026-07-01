@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from app.routes.shift import get_shift_day_key, is_weekend_evening_shift
+from app.routes.shift import get_shift_day_key, is_priority_evening_shift
 
 
 def login_as_participant(client):
@@ -14,11 +14,11 @@ def login_as_coordinator(client):
     assert response.status_code == 200
 
 
-def create_participant_user(client, email, username):
+def create_participant_user(client, email, username, *, is_under_16=False):
     login_as_participant(client)
     response = client.post(
         "/users/",
-        json={"email": email, "username": username},
+        json={"email": email, "username": username, "is_under_16": is_under_16},
     )
     assert response.status_code == 201
     return response.json()
@@ -561,6 +561,53 @@ def test_generate_shift_plan_avoids_forced_triple_when_alternative_exists(authen
     assert fallback_assignments[0]["shift_id"] == shift_ids[2]
 
 
+def test_generate_shift_plan_respects_under_16_evening_restriction(authenticated_client):
+    under_16_id = create_participant_user(
+        authenticated_client,
+        "under16-planner@example.com",
+        "under16planner",
+        is_under_16=True,
+    )["id"]
+    adult_id = create_participant_user(
+        authenticated_client,
+        "adult-planner@example.com",
+        "adultplanner",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+
+    day_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Day Shift",
+            "start_time": datetime(2026, 8, 7, 18, 0).isoformat(),
+            "end_time": datetime(2026, 8, 7, 20, 0).isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    evening_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Evening Shift",
+            "start_time": datetime(2026, 8, 7, 20, 0).isoformat(),
+            "end_time": datetime(2026, 8, 7, 22, 0).isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    response = authenticated_client.post("/shifts/generate-plan?max_shifts_per_user=2&planner_seed=23")
+    assert response.status_code == 200
+
+    assignments = response.json()["assignments"]
+    assigned_user_by_shift = {
+        assignment["shift_id"]: assignment["user_id"]
+        for assignment in assignments
+    }
+
+    assert assigned_user_by_shift[evening_shift_id] == adult_id
+    assert assigned_user_by_shift[day_shift_id] == under_16_id
+
+
 def test_generate_shift_plan_seed_is_reproducible(authenticated_client):
     for index in range(3):
         create_participant_user(
@@ -642,6 +689,10 @@ def test_generate_shift_plan_uses_seed_to_offer_alternatives(authenticated_clien
 
 def test_late_night_shifts_belong_to_previous_festival_night():
     """00:00-02:00 should count as the previous festival night for planner scoring."""
+    thursday_night_extension = SimpleNamespace(
+        start_time=datetime(2026, 8, 7, 0, 0),
+        end_time=datetime(2026, 8, 7, 2, 0),
+    )
     friday_night_extension = SimpleNamespace(
         start_time=datetime(2026, 8, 8, 0, 0),
         end_time=datetime(2026, 8, 8, 2, 0),
@@ -651,7 +702,9 @@ def test_late_night_shifts_belong_to_previous_festival_night():
         end_time=datetime(2026, 8, 9, 2, 0),
     )
 
+    assert get_shift_day_key(thursday_night_extension) == "2026-08-06"
     assert get_shift_day_key(friday_night_extension) == "2026-08-07"
     assert get_shift_day_key(saturday_night_extension) == "2026-08-08"
-    assert is_weekend_evening_shift(friday_night_extension) is True
-    assert is_weekend_evening_shift(saturday_night_extension) is True
+    assert is_priority_evening_shift(thursday_night_extension) is True
+    assert is_priority_evening_shift(friday_night_extension) is True
+    assert is_priority_evening_shift(saturday_night_extension) is True

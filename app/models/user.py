@@ -22,6 +22,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     is_active = Column(Boolean, default=True)
     is_coordinator = Column(Boolean, default=False)
+    is_under_16 = Column(Boolean, default=False, nullable=False)
     location_preference = Column(String, default="both", nullable=False)
     
     # Add foreign key to Group

@@ -10,22 +10,28 @@ import { translations } from '../utils/translations';
 
 // Enhanced styled component for shift cells with more pronounced visual feedback
 const ShiftCell = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'isPending' && prop !== 'selected'
-})(({ theme, selected, isPending }) => ({
+  shouldForwardProp: (prop) => !['isPending', 'selected', 'blocked'].includes(prop)
+})(({ theme, selected, isPending, blocked }) => ({
   padding: theme.spacing(1, 1.1),
   borderRadius: theme.shape.borderRadius,
-  backgroundColor: selected ? theme.palette.success.light : theme.palette.error.light,
-  color: selected ? theme.palette.success.contrastText : theme.palette.error.contrastText,
-  cursor: isPending ? 'wait' : 'pointer',
+  backgroundColor: blocked
+    ? theme.palette.grey[300]
+    : (selected ? theme.palette.success.light : theme.palette.error.light),
+  color: blocked
+    ? theme.palette.text.secondary
+    : (selected ? theme.palette.success.contrastText : theme.palette.error.contrastText),
+  cursor: blocked ? 'not-allowed' : (isPending ? 'wait' : 'pointer'),
   transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
   boxShadow: isPending 
     ? '0 0 0 2px rgba(25, 118, 210, 0.5)' 
     : '0 1px 3px rgba(0,0,0,0.12)',
   '&:hover': {
-    boxShadow: isPending 
+    boxShadow: blocked
+      ? '0 1px 3px rgba(0,0,0,0.12)'
+      : (isPending 
       ? '0 0 0 2px rgba(25, 118, 210, 0.5)'
-      : '0 4px 8px rgba(0,0,0,0.2)',
-    transform: isPending ? 'none' : 'translateY(-2px)',
+      : '0 4px 8px rgba(0,0,0,0.2)'),
+    transform: blocked || isPending ? 'none' : 'translateY(-2px)',
   },
   display: 'flex',
   justifyContent: 'space-between',
@@ -38,7 +44,7 @@ const ShiftCell = styled(Box, {
   position: 'relative',
   overflow: 'hidden',
   // Add a subtle pulse animation when pending
-  animation: isPending ? 'pulse 1.5s infinite' : 'none',
+  animation: isPending && !blocked ? 'pulse 1.5s infinite' : 'none',
   '@keyframes pulse': {
     '0%': { opacity: 0.7 },
     '50%': { opacity: 0.9 },
@@ -68,6 +74,7 @@ function formatDate(dateStr) {
 const ShiftGrid = ({ 
   shifts, 
   userPreferences, 
+  blockedShiftIds = [],
   pendingOperations = {},
   onBatchDayToggle, // New prop for batch operations
   batchPendingDays = {} // New prop to track which days are being batch processed
@@ -85,6 +92,8 @@ const ShiftGrid = ({
   const pendingMap = useMemo(() => {
     return { ...pendingOperations };
   }, [pendingOperations]);
+
+  const blockedShiftIdSet = useMemo(() => new Set(blockedShiftIds), [blockedShiftIds]);
 
   // Extract unique days and time slots from the shifts using smart grouping
   const { days, timeSlots, shiftsByDayAndTime, shiftsByDay } = useMemo(() => {
@@ -155,13 +164,21 @@ const ShiftGrid = ({
     return pendingMap[shiftId] !== undefined;
   }, [pendingMap]);
 
+  const isShiftBlocked = useCallback((shiftId) => {
+    return blockedShiftIdSet.has(shiftId);
+  }, [blockedShiftIdSet]);
+
   const getSlotSelectionStatus = useCallback((slotShifts) => {
     if (slotShifts.length === 0) {
       return 'none';
     }
 
-    return slotShifts.some(shift => isAvailable(shift.id)) ? 'all' : 'none';
-  }, [isAvailable]);
+    if (slotShifts.every((shift) => isShiftBlocked(shift.id))) {
+      return 'blocked';
+    }
+
+    return slotShifts.some((shift) => !isShiftBlocked(shift.id) && isAvailable(shift.id)) ? 'all' : 'none';
+  }, [isAvailable, isShiftBlocked]);
 
   const handleSlotClick = useCallback((slotShifts) => {
     if (!onBatchDayToggle || slotShifts.length === 0) {
@@ -173,6 +190,9 @@ const ShiftGrid = ({
     }
 
     const selectionStatus = getSlotSelectionStatus(slotShifts);
+    if (selectionStatus === 'blocked') {
+      return;
+    }
     const shouldSelect = selectionStatus === 'none';
 
     onBatchDayToggle(slotShifts, shouldSelect);
@@ -186,7 +206,8 @@ const ShiftGrid = ({
     const slotStatuses = timeSlots
       .map(timeSlot => findShifts(day, timeSlot))
       .filter(slotShifts => slotShifts.length > 0)
-      .map(slotShifts => getSlotSelectionStatus(slotShifts));
+      .map(slotShifts => getSlotSelectionStatus(slotShifts))
+      .filter((status) => status !== 'blocked');
 
     if (slotStatuses.length === 0) return 'none';
     if (slotStatuses.every(status => status === 'all')) return 'all';
@@ -219,12 +240,13 @@ const ShiftGrid = ({
               const selectionStatus = getDaySelectionStatus(day);
               const isDayPending = batchPendingDays[day];
               const dayShifts = shiftsByDay[day] || [];
+              const hasActionableShifts = dayShifts.some((shift) => !isShiftBlocked(shift.id));
               
               return (
                 <TableCell key={day} align="center" sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5', minWidth: '180px' }}>
                   <Stack spacing={1} alignItems="center">
                     {formatDate(day)}
-                    {dayShifts.length > 0 && onBatchDayToggle && (
+                    {dayShifts.length > 0 && onBatchDayToggle && hasActionableShifts && (
                       <Button
                         size="small"
                         variant={selectionStatus === 'all' ? 'contained' : 'outlined'}
@@ -259,6 +281,7 @@ const ShiftGrid = ({
                 const cellShifts = findShifts(day, timeSlot);
                 const selectionStatus = getSlotSelectionStatus(cellShifts);
                 const available = selectionStatus === 'all';
+                const blocked = selectionStatus === 'blocked';
                 const isPending = cellShifts.some(shift => isShiftPending(shift.id));
                 
                 return (
@@ -266,6 +289,7 @@ const ShiftGrid = ({
                     {cellShifts.length > 0 ? (
                       <ShiftCell
                         selected={available}
+                        blocked={blocked}
                         isPending={isPending}
                         onClick={() => handleSlotClick(cellShifts)}
                       >
@@ -280,9 +304,11 @@ const ShiftGrid = ({
                             fontWeight: 600
                           }}
                         >
-                          {available
-                            ? translations.grid.slotAvailable
-                            : translations.grid.slotUnavailable}
+                          {blocked
+                            ? translations.grid.slotAgeRestricted
+                            : (available
+                              ? translations.grid.slotAvailable
+                              : translations.grid.slotUnavailable)}
                         </Box>
                         {isPending ? (
                           <CircularProgress 

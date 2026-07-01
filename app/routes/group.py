@@ -207,6 +207,14 @@ def add_user_to_group(
                 detail="Coordinator accounts cannot join groups",
             )
 
+        if user.is_under_16:
+            span.add_event("under_16_group_membership_blocked", {"user_id": user_id})
+            span.set_attribute("error", "Users under 16 cannot join groups")
+            raise HTTPException(
+                status_code=400,
+                detail="Users under 16 cannot join groups",
+            )
+
         ensure_self_or_coordinator(auth_session, user_id)
         
         # Check if group has space

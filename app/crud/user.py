@@ -28,6 +28,7 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
             email=obj_in.email,
             username=obj_in.username,
             is_active=True,
+            is_under_16=obj_in.is_under_16,
             location_preference=obj_in.location_preference or "both",
         )
         

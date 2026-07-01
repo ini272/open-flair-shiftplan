@@ -15,6 +15,7 @@ class UserCreate(UserBase):
     """Schema for creating a user"""
     email: EmailStr
     username: str
+    is_under_16: bool = False
 
 class UserUpdate(UserBase):
     """Schema for updating a user"""
@@ -28,6 +29,7 @@ class User(UserBase):
     username: str
     is_active: bool
     is_coordinator: bool  # Add this line
+    is_under_16: bool = False
     group_id: Optional[int] = None
     location_preference: LocationPreference = "both"
 

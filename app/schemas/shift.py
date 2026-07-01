@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -80,6 +80,20 @@ class ShiftGroup(ShiftGroupBase):
     model_config = ConfigDict(from_attributes=True)
 
     assigned_at: datetime
+
+
+class ShiftExportAssignment(BaseModel):
+    """Assignment payload used for XLSX export previews."""
+    shift_id: int
+    username: str
+    assigned_via: Literal["group", "individual"]
+    group_name: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class ShiftXlsxExportRequest(BaseModel):
+    """Optional assignment overlay for exporting the currently shown plan."""
+    assignments: Optional[List[ShiftExportAssignment]] = None
 
 class Shift(ShiftBase):
     """Schema for returning shift data"""

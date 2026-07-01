@@ -246,6 +246,7 @@ const CoordinatorView = ({ shifts, users }) => {
         id: user.id,
         type: 'user',
         label: user.username,
+        isUnder16: Boolean(user.is_under_16),
         shiftCount: assignmentStats.userShiftCounts.get(user.id) || 0,
       }));
 

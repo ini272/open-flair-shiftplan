@@ -32,6 +32,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import PrintIcon from '@mui/icons-material/Print';
+import DownloadIcon from '@mui/icons-material/Download';
 import { groupService, shiftService } from '../services/api';
 import { getTeamColor } from '../utils/teamColors';
 import { translations } from '../utils/translations';
@@ -587,6 +588,26 @@ const CoordinatorShiftGrid = ({
         window.print();
       });
     });
+  };
+
+  const handleExportXlsx = async () => {
+    if (typeof window === 'undefined' || dayPlans.length === 0) {
+      return;
+    }
+
+    try {
+      const response = await shiftService.exportPlanXlsx(generatedAssignments || null);
+      const downloadUrl = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = 'open-flair-schichtplan.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (exportError) {
+      console.error('Error exporting XLSX plan:', exportError);
+    }
   };
 
   const handleOpenAddUserDialog = async (shift) => {
@@ -1168,16 +1189,32 @@ const CoordinatorShiftGrid = ({
               })}
             </ToggleButtonGroup>
 
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<PrintIcon />}
-              onClick={handlePrintActiveDay}
-              disabled={!activeDayPlan}
-              sx={{ alignSelf: { xs: 'stretch', lg: 'center' }, whiteSpace: 'nowrap' }}
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              sx={{ alignSelf: { xs: 'stretch', lg: 'center' } }}
             >
-              {translations.grid.printActiveDay}
-            </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<DownloadIcon />}
+              onClick={handleExportXlsx}
+                disabled={!dayPlans.length}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {translations.grid.exportXlsx}
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<PrintIcon />}
+                onClick={handlePrintActiveDay}
+                disabled={!activeDayPlan}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {translations.grid.printActiveDay}
+              </Button>
+            </Stack>
           </Stack>
         </Box>
 

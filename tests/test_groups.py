@@ -171,3 +171,26 @@ def test_remove_user_not_in_group(participant_client):
 
     response = participant_client.delete(f"/groups/users/{user_id}")
     assert response.status_code == 400
+
+
+def test_under_16_users_cannot_join_groups(participant_client):
+    """Under-16 accounts must stay out of groups."""
+    user_response = participant_client.post(
+        "/users/",
+        json={
+            "email": "under16-group@example.com",
+            "username": "under16group",
+            "is_under_16": True,
+        }
+    )
+    user_id = user_response.json()["id"]
+
+    group_response = participant_client.post(
+        "/groups/",
+        json={"name": "Blocked Group"}
+    )
+    group_id = group_response.json()["id"]
+
+    response = participant_client.post(f"/groups/{group_id}/users/{user_id}")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Users under 16 cannot join groups"

@@ -18,14 +18,19 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import { translations } from '../utils/translations';
+import { isUnder16RestrictedShift } from '../utils/shiftRestrictions';
 
 const ShiftStateCard = styled(Box, {
-  shouldForwardProp: (prop) => prop !== 'isAvailable' && prop !== 'isAssigned',
-})(({ theme, isAvailable, isAssigned }) => ({
+  shouldForwardProp: (prop) => !['isAvailable', 'isAssigned', 'isBlocked'].includes(prop),
+})(({ theme, isAvailable, isAssigned, isBlocked }) => ({
   padding: theme.spacing(0.95, 1.05),
   borderRadius: theme.shape.borderRadius,
-  backgroundColor: isAvailable ? theme.palette.success.light : theme.palette.error.light,
-  color: isAvailable ? theme.palette.success.contrastText : theme.palette.error.contrastText,
+  backgroundColor: isBlocked
+    ? theme.palette.grey[300]
+    : (isAvailable ? theme.palette.success.light : theme.palette.error.light),
+  color: isBlocked
+    ? theme.palette.text.secondary
+    : (isAvailable ? theme.palette.success.contrastText : theme.palette.error.contrastText),
   boxShadow: isAssigned
     ? '0 0 0 2px rgba(0, 0, 0, 0.85)'
     : '0 1px 3px rgba(0, 0, 0, 0.12)',
@@ -240,14 +245,21 @@ const CoordinatorPersonView = ({
                     >
                       {dayShifts.map((shift) => {
                         const assignment = assignmentMap.get(shift.id);
-                        const isAvailable = !optedOutShiftIds.has(shift.id);
+                        const isBlocked = Boolean(
+                          selectedViewOption.type === 'user'
+                          && selectedViewOption.isUnder16
+                          && isUnder16RestrictedShift(shift)
+                        );
+                        const isAvailable = !isBlocked && !optedOutShiftIds.has(shift.id);
                         const assignmentTitle = assignment
                           ? (assignment.assigned_via === 'group' && assignment.group_name
                             ? `${translations.coordinator.userAssignedVia} ${assignment.group_name}`
                             : translations.coordinator.userAssignedDirectly)
                           : (isAvailable
                             ? translations.coordinator.userAvailable
-                            : translations.coordinator.userOptedOut);
+                            : (isBlocked
+                              ? translations.restrictions.under16EveningShift
+                              : translations.coordinator.userOptedOut));
                         const tooltipTitle = (
                           <Box>
                             <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -264,6 +276,7 @@ const CoordinatorPersonView = ({
                             <ShiftStateCard
                               isAvailable={isAvailable}
                               isAssigned={Boolean(assignment)}
+                              isBlocked={isBlocked}
                             >
                               <Typography
                                 variant="body2"

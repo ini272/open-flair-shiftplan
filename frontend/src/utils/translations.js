@@ -63,7 +63,7 @@ export const translations = {
     selectionPlannerFairness: 'Der Schichtplaner sammelt die grün und rot markierten Schichten der ganzen Crew und verteilt die Einsätze so fair wie möglich über das Flair-Wochenende.',
     selectionPlannerMaxShifts: 'Pro Person oder Team werden höchstens 10 Schichten eingeplant.',
     selectionPlannerOnlyGreen: 'Eingeteilt werdet ihr nur in grün markierte Schichten.',
-    selectionPlannerWeekend: 'Bitte tragt euch min. einmal für Freitag oder Samstag ab 20:00 Uhr ein, da wir hier oft Engpässe haben.',
+    selectionPlannerWeekend: 'Bitte tragt euch min. einmal für Donnerstag, Freitag oder Samstag ab 20:00 Uhr ein, da wir hier oft Engpässe haben.',
     selectionPlannerKeepGreen: 'Wichtig: Lasst bitte alle Schichten grün, die für euch realistisch passen. Das erleichtert das automatische Verteilen und hilft uns, insgesamt gut abgedeckt zu sein.',
     selectionAutoSave: 'Änderungen werden automatisch gespeichert.',
     locationPreferenceTitle: 'Standort-Präferenz',
@@ -91,7 +91,7 @@ export const translations = {
   festival: {
     name: 'Open Flair Festival',
     year: '2026',
-    dates: '5. - 9. August 2026',
+    dates: '6. - 9. August 2026',
     location: 'Eschwege, Deutschland',
     timetable: 'Festival Webseite ansehen',
     crewDashboard: 'Open Flair Festival Crew Dashboard',
@@ -120,6 +120,9 @@ export const translations = {
     continue: 'Weiter',
     searchingAccount: 'Suche Konto...',
     emailHelper: 'Du verwendest diese E-Mail beim nächsten Mal zum Anmelden in der Spalte „Bestehender Nutzer“.',
+    under16Label: 'Ich bin unter 16',
+    under16Helper: 'Wenn du unter 16 bist, kannst du nur Einzelschichten bis einschließlich 18:00-20:00 Uhr übernehmen.',
+    under16GroupHint: 'Unter 16 ist nur eine Einzelanmeldung möglich. Gruppen werden deshalb deaktiviert.',
     groupHelper: 'Gib eine bestehende Gruppe ein oder erstelle eine neue.',
     groupInfoTitle: 'Wichtig bei Gruppen',
     groupInfoBody: 'Gruppen wählen Verfügbarkeiten gemeinsam aus und werden später zusammen eingeplant. Einzelne Mitglieder wählen danach nicht separat Schichten aus.',
@@ -244,6 +247,7 @@ export const translations = {
     noShiftHere: 'An diesem Standort gibt es in diesem Zeitfenster keine Schicht.',
     slotAvailable: 'Verfügbar',
     slotUnavailable: 'Nicht möglich',
+    slotAgeRestricted: 'U16 gesperrt',
     namesColumn: 'Namen',
     peopleShort: 'Pers.',
     addPersonOrGroup: 'Person oder Gruppe',
@@ -257,10 +261,15 @@ export const translations = {
     addIndividuals: 'Person hinzufügen',
     editShift: 'Schicht bearbeiten',
     printActiveDay: 'Diesen Tag drucken',
+    exportXlsx: 'Excel exportieren',
     printTimestampLabel: 'Stand',
     currentAssignments: 'Aktuell eingeteilt',
     directAssignment: 'Direkt eingeteilt',
     noSearchResults: 'Keine passenden Ergebnisse gefunden.',
     noAvailablePeople: 'Keine verfügbaren Personen oder Gruppen gefunden.'
+  },
+
+  restrictions: {
+    under16EveningShift: 'Unter 16 sind Schichten ab 20:00 Uhr nicht möglich.'
   }
 };

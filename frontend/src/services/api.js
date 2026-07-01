@@ -71,6 +71,11 @@ export const shiftService = {
       max_shifts_per_user: maxShiftsPerUser
     }
   }),
+  exportPlanXlsx: (assignments = null) => api.post(
+    '/shifts/export/xlsx',
+    { assignments },
+    { responseType: 'blob' }
+  ),
   getCurrentAssignments: () => api.get('/shifts/current-assignments'),
   clearAllAssignments: () => api.delete('/shifts/all-assignments'),
 };

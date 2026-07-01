@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
+  Checkbox,
   Container, 
   Paper, 
   Typography, 
@@ -55,6 +56,7 @@ const getAccountErrorMessage = (error, fallback, options = {}) => {
     'User not found': translations.account.userNotFound,
     'Failed to add user to group': translations.account.groupJoinFailed,
     'Coordinator accounts cannot join groups': translations.account.coordinatorCannotJoinGroups,
+    'Users under 16 cannot join groups': translations.account.under16GroupHint,
   };
 
   if (detailMap[detail]) {
@@ -96,6 +98,7 @@ const AccountAccessPage = () => {
   // New user state
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [isUnder16, setIsUnder16] = useState(false);
   const [workPreference, setWorkPreference] = useState('alone');
   const [groupName, setGroupName] = useState('');
   const [newUserError, setNewUserError] = useState('');
@@ -171,6 +174,12 @@ const AccountAccessPage = () => {
     loadExistingGroups();
   }, [isCoordinatorAccess]);
 
+  useEffect(() => {
+    if (isUnder16 && workPreference === 'group') {
+      setWorkPreference('alone');
+    }
+  }, [isUnder16, workPreference]);
+
   // Handle tab change
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -217,7 +226,7 @@ const AccountAccessPage = () => {
     
     try {
       
-      const wantsGroup = !isCoordinatorAccess && workPreference === 'group';
+      const wantsGroup = !isCoordinatorAccess && !isUnder16 && workPreference === 'group';
 
       // If working in a group, check if group is full BEFORE creating user
       if (wantsGroup) {
@@ -247,7 +256,8 @@ const AccountAccessPage = () => {
       // Now create the user
       const userResponse = await userService.createUser({
         username: trimmedName,
-        email: trimmedEmail
+        email: trimmedEmail,
+        is_under_16: isUnder16,
       });
 
       // Store user info in localStorage
@@ -433,7 +443,21 @@ const AccountAccessPage = () => {
               />
               
               {!isCoordinatorAccess && (
-                <FormControl component="fieldset" margin="normal">
+                <FormControl component="fieldset" margin="normal" sx={{ width: '100%' }}>
+                  <FormControlLabel
+                    control={(
+                      <Checkbox
+                        checked={isUnder16}
+                        onChange={(event) => setIsUnder16(event.target.checked)}
+                      />
+                    )}
+                    label={translations.account.under16Label}
+                    sx={{ mb: 0.5 }}
+                  />
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+                    {translations.account.under16Helper}
+                  </Typography>
+
                   <FormLabel component="legend">{translations.account.workPreference}</FormLabel>
                   <RadioGroup
                     value={workPreference}
@@ -448,8 +472,14 @@ const AccountAccessPage = () => {
                       value="group"
                       control={<Radio />}
                       label={translations.account.workInGroup}
+                      disabled={isUnder16}
                     />
                   </RadioGroup>
+                  {isUnder16 && (
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                      {translations.account.under16GroupHint}
+                    </Alert>
+                  )}
                 </FormControl>
               )}
               

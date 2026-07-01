@@ -12,6 +12,7 @@ import ShiftGrid from '../components/ShiftGrid';
 import CoordinatorView from '../components/CoordinatorView';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
+import { isUnder16RestrictedShift } from '../utils/shiftRestrictions';
 import { groupService } from '../services/api';
 
 
@@ -167,8 +168,19 @@ const DashboardPage = () => {
 
   // Memoize the available shifts calculation
   const availableShiftIds = useMemo(() => {
-    return shifts.map(shift => shift.id).filter(id => !optedOutShifts.includes(id));
-  }, [shifts, optedOutShifts]);
+    return shifts
+      .filter((shift) => !(user?.is_under_16 && isUnder16RestrictedShift(shift)))
+      .map((shift) => shift.id)
+      .filter((id) => !optedOutShifts.includes(id));
+  }, [optedOutShifts, shifts, user?.is_under_16]);
+
+  const blockedShiftIdSet = useMemo(() => (
+    new Set(
+      shifts
+        .filter((shift) => user?.is_under_16 && isUnder16RestrictedShift(shift))
+        .map((shift) => shift.id)
+    )
+  ), [shifts, user?.is_under_16]);
 
   const handleLocationChange = useCallback(async (event, newLocation) => {
     if (!user || !newLocation || newLocation === locationPreference) {
@@ -210,9 +222,14 @@ const DashboardPage = () => {
   // New batch day toggle handler
   const handleBatchDayToggle = useCallback(async (dayShifts, shouldSelect) => {
     if (!user || dayShifts.length === 0) return;
+
+    const actionableDayShifts = dayShifts.filter((shift) => !blockedShiftIdSet.has(shift.id));
+    if (actionableDayShifts.length === 0) {
+      return;
+    }
     
     // Get the day from the first shift for tracking
-    const day = new Date(dayShifts[0].start_time).toISOString().split('T')[0];
+    const day = new Date(actionableDayShifts[0].start_time).toISOString().split('T')[0];
     
     // Set day as pending
     setBatchPendingDays(prev => ({ ...prev, [day]: true }));
@@ -221,7 +238,7 @@ const DashboardPage = () => {
       const operations = [];
       const shiftsToProcess = [];
       
-      for (const shift of dayShifts) {
+      for (const shift of actionableDayShifts) {
         const isCurrentlyOptedOut = optedOutShifts.includes(shift.id);
         const isCurrentlySelected = !isCurrentlyOptedOut;
         
@@ -413,7 +430,7 @@ const DashboardPage = () => {
         return updated;
       });
     }
-  }, [getShiftSlotKey, optedOutShifts, user]);
+  }, [blockedShiftIdSet, getShiftSlotKey, optedOutShifts, user]);
 
   const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
@@ -469,6 +486,12 @@ const DashboardPage = () => {
           {isCoordinator && (
             <Alert severity="info" sx={{ mb: 2 }}>
               {translations.coordinator.coordinatorShiftSelectionDisabled}
+            </Alert>
+          )}
+
+          {user?.is_under_16 && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {translations.restrictions.under16EveningShift}
             </Alert>
           )}
 
@@ -695,6 +718,7 @@ const DashboardPage = () => {
           <ShiftGrid 
             shifts={shifts} 
             userPreferences={availableShiftIds} 
+            blockedShiftIds={Array.from(blockedShiftIdSet)}
             pendingOperations={pendingOperations}
             onBatchDayToggle={handleBatchDayToggle}
             batchPendingDays={batchPendingDays}

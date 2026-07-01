@@ -260,3 +260,58 @@ def test_coordinator_accounts_cannot_join_groups(client):
     add_response = client.post(f"/groups/{group_id}/users/{coordinator_id}")
 
     assert add_response.status_code == 400
+
+
+def test_under_16_users_cannot_be_manually_assigned_to_evening_shifts(client):
+    """Under-16 accounts should be excluded from 20:00+ assignments."""
+    client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    under_16_response = client.post(
+        "/users/",
+        json={
+            "email": "under16@example.com",
+            "username": "under16",
+            "is_under_16": True,
+        },
+    )
+    under_16_id = under_16_response.json()["id"]
+
+    adult_response = client.post(
+        "/users/",
+        json={
+            "email": "adult@example.com",
+            "username": "adult",
+        },
+    )
+    adult_id = adult_response.json()["id"]
+
+    client.post("/auth/login", json={"access_code": "koordination2026"})
+    start_time = datetime(2026, 8, 7, 20, 0)
+    end_time = start_time + timedelta(hours=2)
+    shift_response = client.post(
+        "/shifts/",
+        json={
+            "title": "Evening Restriction Shift",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 2,
+        },
+    )
+    shift_id = shift_response.json()["id"]
+
+    available_users_response = client.get(f"/shifts/available-users/{shift_id}")
+    available_user_ids = {user["id"] for user in available_users_response.json()}
+
+    blocked_assignment_response = client.post(
+        "/shifts/users/",
+        json={"shift_id": shift_id, "user_id": under_16_id},
+    )
+    successful_assignment_response = client.post(
+        "/shifts/users/",
+        json={"shift_id": shift_id, "user_id": adult_id},
+    )
+
+    assert adult_id in available_user_ids
+    assert under_16_id not in available_user_ids
+    assert blocked_assignment_response.status_code == 400
+    assert blocked_assignment_response.json()["detail"] == "Users under 16 cannot be assigned to shifts from 20:00 onward"
+    assert successful_assignment_response.status_code == 200

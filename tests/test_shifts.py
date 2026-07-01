@@ -1,4 +1,31 @@
 from datetime import datetime, timedelta
+import io
+import zipfile
+
+
+def login_as_participant(client):
+    response = client.post("/auth/login", json={"access_code": "weinzelt2026"})
+    assert response.status_code == 200
+
+
+def login_as_coordinator(client):
+    response = client.post("/auth/login", json={"access_code": "koordination2026"})
+    assert response.status_code == 200
+
+
+def create_participant_user(client, email, username):
+    login_as_participant(client)
+    response = client.post(
+        "/users/",
+        json={"email": email, "username": username},
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def read_xlsx_entry(content, path):
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        return archive.read(path).decode("utf-8")
 
 def test_create_shift(authenticated_client):
     """Test creating a new shift."""
@@ -168,11 +195,12 @@ def test_delete_shift(authenticated_client):
 def test_add_user_to_shift(authenticated_client):
     """Test adding a user to a shift."""
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "shiftuser@example.com", "username": "shiftuser"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "shiftuser@example.com",
+        "shiftuser",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -212,17 +240,18 @@ def test_add_group_to_shift(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create users and add to group
-    user1_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupuser1@example.com", "username": "groupuser1"}
-    )
-    user1_id = user1_response.json()["id"]
+    user1_id = create_participant_user(
+        authenticated_client,
+        "groupuser1@example.com",
+        "groupuser1",
+    )["id"]
     
-    user2_response = authenticated_client.post(
-        "/users/",
-        json={"email": "groupuser2@example.com", "username": "groupuser2"}
-    )
-    user2_id = user2_response.json()["id"]
+    user2_id = create_participant_user(
+        authenticated_client,
+        "groupuser2@example.com",
+        "groupuser2",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add users to group
     authenticated_client.post(f"/groups/{group_id}/users/{user1_id}")
@@ -276,17 +305,18 @@ def test_shift_capacity_limit(authenticated_client):
     shift_id = shift_response.json()["id"]
     
     # Create two users
-    user1_response = authenticated_client.post(
-        "/users/",
-        json={"email": "capacity1@example.com", "username": "capacity1"}
-    )
-    user1_id = user1_response.json()["id"]
+    user1_id = create_participant_user(
+        authenticated_client,
+        "capacity1@example.com",
+        "capacity1",
+    )["id"]
     
-    user2_response = authenticated_client.post(
-        "/users/",
-        json={"email": "capacity2@example.com", "username": "capacity2"}
-    )
-    user2_id = user2_response.json()["id"]
+    user2_id = create_participant_user(
+        authenticated_client,
+        "capacity2@example.com",
+        "capacity2",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add first user to shift (should succeed)
     response1 = authenticated_client.post(
@@ -305,11 +335,12 @@ def test_shift_capacity_limit(authenticated_client):
 def test_remove_user_from_shift(authenticated_client):
     """Test removing a user from a shift."""
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "removeuser@example.com", "username": "removeuser"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "removeuser@example.com",
+        "removeuser",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)
@@ -351,11 +382,12 @@ def test_remove_group_from_shift(authenticated_client):
     group_id = group_response.json()["id"]
     
     # Create users and add to group
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "removegroup@example.com", "username": "removegroup"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "removegroup@example.com",
+        "removegroup",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Add user to group
     authenticated_client.post(f"/groups/{group_id}/users/{user_id}")
@@ -413,11 +445,12 @@ def test_shift_requires_authentication(client):
 def test_clear_all_assignments(authenticated_client):
     """Test clearing all shift assignments."""
     # Create a user
-    user_response = authenticated_client.post(
-        "/users/",
-        json={"email": "cleartest@example.com", "username": "cleartest"}
-    )
-    user_id = user_response.json()["id"]
+    user_id = create_participant_user(
+        authenticated_client,
+        "cleartest@example.com",
+        "cleartest",
+    )["id"]
+    login_as_coordinator(authenticated_client)
     
     # Create a group
     group_response = authenticated_client.post(
@@ -470,3 +503,122 @@ def test_clear_all_assignments(authenticated_client):
     shift_data = shift_response.json()
     assert len(shift_data["users"]) == 0
     assert len(shift_data["groups"]) == 0
+
+
+def test_export_shift_plan_xlsx_uses_saved_assignments(authenticated_client):
+    franzi_id = create_participant_user(
+        authenticated_client,
+        "xlsx-franzi@example.com",
+        "Franzi",
+    )["id"]
+    susi_id = create_participant_user(
+        authenticated_client,
+        "xlsx-susi@example.com",
+        "Susi",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+
+    group_response = authenticated_client.post(
+        "/groups/",
+        json={"name": "Team Blau"},
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+    add_group_user_response = authenticated_client.post(f"/groups/{group_id}/users/{susi_id}")
+    assert add_group_user_response.status_code == 200
+
+    thursday_weinzelt = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Donnerstag",
+            "start_time": "2026-08-06T14:00:00",
+            "end_time": "2026-08-06T16:00:00",
+            "capacity": 4,
+        },
+    )
+    assert thursday_weinzelt.status_code == 201
+    thursday_weinzelt_id = thursday_weinzelt.json()["id"]
+
+    thursday_bierwagen = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Bierwagen Donnerstag",
+            "start_time": "2026-08-06T14:00:00",
+            "end_time": "2026-08-06T16:00:00",
+            "capacity": 4,
+        },
+    )
+    assert thursday_bierwagen.status_code == 201
+    thursday_bierwagen_id = thursday_bierwagen.json()["id"]
+
+    friday_weinzelt = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Freitag",
+            "start_time": "2026-08-07T16:00:00",
+            "end_time": "2026-08-07T18:00:00",
+            "capacity": 4,
+        },
+    )
+    assert friday_weinzelt.status_code == 201
+
+    add_user_response = authenticated_client.post(
+        "/shifts/users/",
+        json={"shift_id": thursday_weinzelt_id, "user_id": franzi_id},
+    )
+    assert add_user_response.status_code == 200
+
+    add_group_response = authenticated_client.post(
+        "/shifts/groups/",
+        json={"shift_id": thursday_bierwagen_id, "group_id": group_id},
+    )
+    assert add_group_response.status_code == 200
+
+    export_response = authenticated_client.post("/shifts/export/xlsx")
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert export_response.content[:2] == b"PK"
+
+    workbook_xml = read_xlsx_entry(export_response.content, "xl/workbook.xml")
+    first_sheet_xml = read_xlsx_entry(export_response.content, "xl/worksheets/sheet1.xml")
+
+    assert "Do 06.08." in workbook_xml
+    assert "Fr 07.08." in workbook_xml
+    assert "Weinzelt" in first_sheet_xml
+    assert "Bierwagen" in first_sheet_xml
+    assert "Franzi" in first_sheet_xml
+    assert "Susi" in first_sheet_xml
+    assert "14:00 -" in first_sheet_xml
+
+
+def test_export_shift_plan_xlsx_uses_assignment_override(authenticated_client):
+    shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Preview",
+            "start_time": "2026-08-06T18:00:00",
+            "end_time": "2026-08-06T20:00:00",
+            "capacity": 4,
+        },
+    )
+    assert shift_response.status_code == 201
+    shift_id = shift_response.json()["id"]
+
+    export_response = authenticated_client.post(
+        "/shifts/export/xlsx",
+        json={
+            "assignments": [
+                {
+                    "shift_id": shift_id,
+                    "username": "Preview Person",
+                    "assigned_via": "individual",
+                }
+            ]
+        },
+    )
+    assert export_response.status_code == 200
+
+    first_sheet_xml = read_xlsx_entry(export_response.content, "xl/worksheets/sheet1.xml")
+    assert "Preview Person" in first_sheet_xml

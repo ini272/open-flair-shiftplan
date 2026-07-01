@@ -14,33 +14,39 @@ def ensure_location_preference_columns() -> None:
 
     existing_tables = set(inspector.get_table_names())
     required_columns = {
-        "users": "location_preference",
-        "groups": "location_preference",
+        "users": [
+            ("location_preference", "VARCHAR DEFAULT 'both'", "'both'"),
+            ("is_under_16", "BOOLEAN DEFAULT 0", "0"),
+        ],
+        "groups": [
+            ("location_preference", "VARCHAR DEFAULT 'both'", "'both'"),
+        ],
     }
 
     with engine.begin() as connection:
-        for table_name, column_name in required_columns.items():
+        for table_name, table_columns in required_columns.items():
             if table_name not in existing_tables:
                 continue
 
             existing_columns = {
                 column["name"] for column in inspector.get_columns(table_name)
             }
-            if column_name not in existing_columns:
+            for column_name, column_definition, default_value in table_columns:
+                if column_name not in existing_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {column_name} {column_definition}"
+                        )
+                    )
+
                 connection.execute(
                     text(
-                        f"ALTER TABLE {table_name} "
-                        "ADD COLUMN location_preference VARCHAR DEFAULT 'both'"
+                        f"UPDATE {table_name} "
+                        f"SET {column_name} = {default_value} "
+                        f"WHERE {column_name} IS NULL"
                     )
                 )
-
-            connection.execute(
-                text(
-                    f"UPDATE {table_name} "
-                    "SET location_preference = 'both' "
-                    "WHERE location_preference IS NULL"
-                )
-            )
 
 
 # Create database tables and backfill simple additive schema updates.

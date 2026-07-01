@@ -34,6 +34,7 @@ Bevor überhaupt gescored wird, fliegen Kandidaten raus, wenn eine dieser Beding
 - das Team passt von der Größe nicht in die freie Kapazität der Schicht
 - die Person oder das Team hätte eine Zeitüberschneidung mit einer schon zugeteilten Schicht
 - eine Person in der Einheit hat bereits das Limit `max_shifts_per_user` erreicht
+- eine Person ist unter 16 und die Schicht beginnt ab `20:00` oder liegt nach Mitternacht
 
 Diese Regeln sind hart. Dagegen wird nie eingeplant.
 
@@ -43,7 +44,7 @@ Die Schichten werden nicht zufällig abgearbeitet.
 
 Vereinfacht gilt:
 
-1. Freitag- und Samstagabend ab 20:00 zuerst
+1. Donnerstag-, Freitag- und Samstagabend ab 20:00 zuerst
 2. dann nach Tages- und Slot-Reihenfolge
 3. knappe Schichten mit wenigen möglichen Kandidaten früher
 
@@ -123,9 +124,9 @@ Ziel:
 
 - unpraktische Lücken im Tagesablauf vermeiden
 
-### 8. Freitag- und Samstagabend fair verteilen
+### 8. Donnerstag-, Freitag- und Samstagabend fair verteilen
 
-Späte Schichten an Freitag und Samstag sind besonders sensibel.
+Späte Schichten an Donnerstag, Freitag und Samstag sind besonders sensibel.
 
 Regel:
 
