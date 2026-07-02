@@ -10,11 +10,10 @@ The current target is a Docker deployment on a home server or small VPS. Public 
 
 ```mermaid
 graph TD
-    Browser[Browser] --> Frontend[React Frontend]
+    Browser[Browser] --> Caddy[Caddy TLS Proxy]
+    Caddy --> Frontend[Nginx Frontend]
     Frontend --> API[FastAPI API]
     API --> SQLite[(SQLite Database)]
-    Nginx[Nginx in production compose] --> Frontend
-    Nginx --> API
 ```
 
 ## Request Flow
@@ -28,10 +27,10 @@ graph TD
 ## Deployment
 
 - Development compose exposes the frontend on `3000` and backend on `8000`.
-- Production compose exposes Nginx on `80`.
-- The backend is available only inside the compose network in production.
+- Production compose exposes Caddy on `80` and `443`.
+- The frontend and backend are available only inside the compose network in production.
 - SQLite data is persisted in `./data`.
-- Production requires `EVENT_CODE`, `COORDINATOR_CODE`, and `SESSION_SECRET_KEY`.
+- Production requires `APP_DOMAIN`, `EVENT_CODE`, `COORDINATOR_CODE`, and `SESSION_SECRET_KEY`.
 - `COOKIE_SECURE=true` is the default for production and requires HTTPS in front of the app.
 
 ## Current Security Boundary

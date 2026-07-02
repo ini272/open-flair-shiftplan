@@ -53,10 +53,10 @@ Users can belong to one group. Shifts can have assigned users and groups, and op
 # Development
 docker compose up
 
-# Production-style local/home-server run
+# Production/home-server run with Caddy-managed HTTPS
 cp .env.example .env
-# edit EVENT_CODE, COORDINATOR_CODE, SESSION_SECRET_KEY
-docker compose -f docker-compose.prod.yml up --build
+# edit APP_DOMAIN, EVENT_CODE, COORDINATOR_CODE, SESSION_SECRET_KEY
+docker compose -f docker-compose.prod.yml up -d --build
 
 # Backend tests without Docker
 uv venv
