@@ -91,7 +91,7 @@ export const translations = {
   festival: {
     name: 'Open Flair Festival',
     year: '2026',
-    dates: '6. - 9. August 2026',
+    dates: '5. - 9. August 2026',
     location: 'Eschwege, Deutschland',
     timetable: 'Festival Webseite ansehen',
     crewDashboard: 'Open Flair Festival Crew Dashboard',
