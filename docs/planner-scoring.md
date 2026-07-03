@@ -38,6 +38,14 @@ Bevor überhaupt gescored wird, fliegen Kandidaten raus, wenn eine dieser Beding
 
 Diese Regeln sind hart. Dagegen wird nie eingeplant.
 
+| Bereich | Regel | Wirkung |
+| --- | --- | --- |
+| Verfügbarkeit | Slot ist abgewählt / Opt-out gesetzt | Kandidat fliegt raus |
+| Kapazität | Person oder Team passt nicht in die freie Schichtkapazität | Kandidat fliegt raus |
+| Zeitkonflikt | Überschneidung mit bereits zugeteilter Schicht | Kandidat fliegt raus |
+| Maximalgrenze | `max_shifts_per_user` erreicht | Kandidat fliegt raus |
+| U16 | Schicht startet ab `20:00` oder nach Mitternacht | Kandidat fliegt raus |
+
 ## Reihenfolge der Schichten
 
 Die Schichten werden nicht zufällig abgearbeitet.
@@ -49,6 +57,28 @@ Vereinfacht gilt:
 3. knappe Schichten mit wenigen möglichen Kandidaten früher
 
 Dadurch versucht der Planer zuerst die schwierigen Stellen zu lösen.
+
+## Aktuelle Score-Werte
+
+Die folgende Tabelle beschreibt die **konkreten Punktwerte**, die aktuell in den Score einfließen.
+
+| Kriterium | Wert | Effekt |
+| --- | ---: | --- |
+| Bereits vergebene Schichten | `-30` pro Schicht | drückt Personen/Teams mit hoher Gesamtlast nach unten |
+| Wenige verfügbare Slots | `+(10 - verfügbare Slots) * 3`, mindestens `0` | bevorzugt knappe, wenig flexible Einheiten |
+| Neuer Einsatztag | `+34` | belohnt Verteilung über mehrere Festivaltage |
+| Neuer Einsatztag bei mehreren möglichen Tagen | zusätzlich `+18` | verstärkt Tagesverteilung für flexible Einheiten |
+| Schon auf diesem Tag, andere Tage noch offen | `-18` | bremst Ballungen auf einem Tag |
+| Schon auf diesem Tag, keine anderen Tage mehr offen | `+4` | kleiner Ausgleich, wenn Tagesballung unvermeidlich ist |
+| Bereits belegte Slots am selben Tag | `-8` pro Slot | bevorzugt weniger Schichten auf einem Tag |
+| Genau zwei direkte Slots hintereinander | `+6` | kleine Belohnung für kompakte Blöcke |
+| Mehr als zwei direkte Slots hintereinander | `-90` pro zusätzlichem Slot über 2 | vermeidet Dreier- oder längere Ketten |
+| Ein-Slot-Lücke im Tagesmuster | `-45` | vermeidet unpraktische Pausen zwischen zwei Einsätzen |
+| Prioritäts-Abendschicht ohne bisherige Abendschicht | `+55` | verteilt unbeliebte Abend-/Nachtzeiten fairer |
+| Nur genau eine mögliche Prioritäts-Abendschicht | zusätzlich `+15` | schützt knappe Abendoptionen |
+| Bereits vorhandene Prioritäts-Abendschichten | `-35` pro Abendschicht | verhindert, dass dieselben Leute alle Prime-Time-Slots bekommen |
+| Standortpräferenz trifft | `+14` | weiche Bevorzugung von `Weinzelt` oder `Bierwagen` |
+| Standortpräferenz trifft nicht | `-8` | kleiner Malus, aber keine harte Sperre |
 
 ## Hauptkriterien im Scoring
 
@@ -150,6 +180,31 @@ Regel:
 Ziel:
 
 - Wünsche berücksichtigen, ohne die Gesamtplanung zu blockieren
+
+## Nicht direkt Score, aber trotzdem entscheidend
+
+Ein paar Dinge beeinflussen die Auswahl, ohne als Punkte in `score_unit_for_shift(...)` zu stehen.
+
+| Mechanik | Bedeutung |
+| --- | --- |
+| Schicht-Slots statt Einzelschichten | Parallele Schichten mit gleicher Uhrzeit werden zusammen betrachtet |
+| Slot-Reihenfolge | Donnerstag-/Freitag-/Samstagabend zuerst, dann nach Slot-Reihenfolge und Knappheit |
+| Standort-Reihenfolge innerhalb eines Parallel-Slots | Die Location mit mehr passend präferierenden Einheiten wird zuerst betrachtet |
+| Dreierblock-Vorfilter | Wenn es Alternativen ohne entstehenden Dreierblock gibt, fliegen Kandidaten mit Dreierblock schon vor dem eigentlichen Score raus |
+| Sortierung nach Score | Erst höherer Score, dann weniger bisherige Schichten, dann feste `sort_order` |
+| Randomisierung | Kandidaten innerhalb eines kleinen Score-Fensters werden zufällig aus einer Top-Gruppe gewählt statt immer starr der erste |
+
+## Aktuelles Randomisierungsfenster
+
+Der Planer nutzt aktuell ein Fenster von `3.0` Score-Punkten.
+
+Das heißt:
+
+- wenn mehrere Kandidaten maximal `3.0` Punkte hinter dem besten Score liegen
+- kommen sie alle in dieselbe Top-Gruppe
+- daraus wird zufällig ausgewählt
+
+Dadurch entstehen alternative, aber ähnlich gute Planvorschläge.
 
 ## Zufall bei fast gleich guten Kandidaten
 
