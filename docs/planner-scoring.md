@@ -61,24 +61,25 @@ Dadurch versucht der Planer zuerst die schwierigen Stellen zu lösen.
 ## Aktuelle Score-Werte
 
 Die folgende Tabelle beschreibt die **konkreten Punktwerte**, die aktuell in den Score einfließen.
+Sie ist grob von hohem Bonus zu starkem Malus sortiert. Variable Werte stehen an der Stelle ihrer maximalen Größenordnung.
 
 | Kriterium | Wert | Effekt |
 | --- | ---: | --- |
-| Bereits vergebene Schichten | `-30` pro Schicht | drückt Personen/Teams mit hoher Gesamtlast nach unten |
-| Wenige verfügbare Slots | `+(10 - verfügbare Slots) * 3`, mindestens `0` | bevorzugt knappe, wenig flexible Einheiten |
+| Prioritäts-Abendschicht ohne bisherige Abendschicht | `+55` | verteilt unbeliebte Abend-/Nachtzeiten fairer |
 | Neuer Einsatztag | `+34` | belohnt Verteilung über mehrere Festivaltage |
+| Wenige verfügbare Slots | `+(10 - verfügbare Slots) * 3`, mindestens `0` | bevorzugt knappe, wenig flexible Einheiten |
 | Neuer Einsatztag bei mehreren möglichen Tagen | zusätzlich `+18` | verstärkt Tagesverteilung für flexible Einheiten |
-| Schon auf diesem Tag, andere Tage noch offen | `-18` | bremst Ballungen auf einem Tag |
+| Nur genau eine mögliche Prioritäts-Abendschicht | zusätzlich `+15` | schützt knappe Abendoptionen |
+| Standortpräferenz trifft | `+14` | weiche Bevorzugung von `Weinzelt` oder `Bierwagen` |
+| Genau zwei direkte Slots hintereinander | `+6` | kleine Belohnung für kompakte Blöcke |
 | Schon auf diesem Tag, keine anderen Tage mehr offen | `+4` | kleiner Ausgleich, wenn Tagesballung unvermeidlich ist |
 | Bereits belegte Slots am selben Tag | `-8` pro Slot | bevorzugt weniger Schichten auf einem Tag |
-| Genau zwei direkte Slots hintereinander | `+6` | kleine Belohnung für kompakte Blöcke |
-| Mehr als zwei direkte Slots hintereinander | `-90` pro zusätzlichem Slot über 2 | vermeidet Dreier- oder längere Ketten |
-| Ein-Slot-Lücke im Tagesmuster | `-45` | vermeidet unpraktische Pausen zwischen zwei Einsätzen |
-| Prioritäts-Abendschicht ohne bisherige Abendschicht | `+55` | verteilt unbeliebte Abend-/Nachtzeiten fairer |
-| Nur genau eine mögliche Prioritäts-Abendschicht | zusätzlich `+15` | schützt knappe Abendoptionen |
-| Bereits vorhandene Prioritäts-Abendschichten | `-35` pro Abendschicht | verhindert, dass dieselben Leute alle Prime-Time-Slots bekommen |
-| Standortpräferenz trifft | `+14` | weiche Bevorzugung von `Weinzelt` oder `Bierwagen` |
 | Standortpräferenz trifft nicht | `-8` | kleiner Malus, aber keine harte Sperre |
+| Schon auf diesem Tag, andere Tage noch offen | `-18` | bremst Ballungen auf einem Tag |
+| Bereits vergebene Schichten | `-30` pro Schicht | drückt Personen/Teams mit hoher Gesamtlast nach unten |
+| Bereits vorhandene Prioritäts-Abendschichten | `-35` pro Abendschicht | verhindert, dass dieselben Leute alle Prime-Time-Slots bekommen |
+| Ein-Slot-Lücke im Tagesmuster | `-45` | vermeidet unpraktische Pausen zwischen zwei Einsätzen |
+| Mehr als zwei direkte Slots hintereinander | `-90` pro zusätzlichem Slot über 2 | vermeidet Dreier- oder längere Ketten |
 
 ## Hauptkriterien im Scoring
 
