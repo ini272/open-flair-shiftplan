@@ -208,6 +208,75 @@ def test_generate_shift_plan_prefers_location_without_requiring_it(authenticated
     assert assigned_user_by_shift[bierwagen_shift_id] == user2_id
 
 
+def test_generate_shift_plan_splits_small_crews_across_parallel_locations(authenticated_client):
+    bierwagen_user_id = create_participant_user(
+        authenticated_client,
+        "small-crew-bw@example.com",
+        "smallcrewbw",
+    )["id"]
+    weinzelt_user_id = create_participant_user(
+        authenticated_client,
+        "small-crew-wz@example.com",
+        "smallcrewwz",
+    )["id"]
+
+    for suffix in ("one", "two", "three"):
+        create_participant_user(
+            authenticated_client,
+            f"small-crew-{suffix}@example.com",
+            f"smallcrew{suffix}",
+        )
+
+    login_as_coordinator(authenticated_client)
+    authenticated_client.put(
+        f"/users/{bierwagen_user_id}",
+        json={"location_preference": "bierwagen"},
+    )
+    authenticated_client.put(
+        f"/users/{weinzelt_user_id}",
+        json={"location_preference": "weinzelt"},
+    )
+
+    start_time = datetime(2026, 8, 7, 18, 0)
+    end_time = start_time + timedelta(hours=2)
+
+    weinzelt_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Kleines Team",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 6,
+        },
+    ).json()["id"]
+
+    bierwagen_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Bierwagen Kleines Team",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 6,
+        },
+    ).json()["id"]
+
+    response = authenticated_client.post("/shifts/generate-plan?max_shifts_per_user=10&planner_seed=17")
+    assert response.status_code == 200
+
+    assignments = response.json()["assignments"]
+    assigned_users_by_shift = {}
+    assigned_shift_by_user = {}
+
+    for assignment in assignments:
+        assigned_users_by_shift.setdefault(assignment["shift_id"], set()).add(assignment["user_id"])
+        assigned_shift_by_user[assignment["user_id"]] = assignment["shift_id"]
+
+    assert assigned_users_by_shift[weinzelt_shift_id]
+    assert assigned_users_by_shift[bierwagen_shift_id]
+    assert assigned_shift_by_user[bierwagen_user_id] == bierwagen_shift_id
+    assert assigned_shift_by_user[weinzelt_user_id] == weinzelt_shift_id
+
+
 def test_generate_shift_plan_respects_slot_opt_outs_for_parallel_shifts(authenticated_client):
     user_id = create_participant_user(
         authenticated_client,
