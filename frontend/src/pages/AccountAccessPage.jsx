@@ -416,7 +416,7 @@ const AccountAccessPage = () => {
                 }}
                 required
                 error={Boolean(newUserFieldErrors.username)}
-                helperText={newUserFieldErrors.username || ' '}
+                helperText={newUserFieldErrors.username || translations.account.nameHelper}
               />
               
               <TextField
@@ -625,7 +625,7 @@ const AccountAccessPage = () => {
                 }}
                 required
                 error={Boolean(returningEmailError)}
-                helperText={returningEmailError || ' '}
+                helperText={returningEmailError || translations.account.returningEmailHelper}
                 autoComplete="email"
                 inputProps={{
                   inputMode: 'email',
