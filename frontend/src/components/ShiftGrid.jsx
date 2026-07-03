@@ -21,16 +21,12 @@ const ShiftCell = styled(Box, {
     ? theme.palette.text.secondary
     : (selected ? theme.palette.success.contrastText : theme.palette.error.contrastText),
   cursor: blocked ? 'not-allowed' : (isPending ? 'wait' : 'pointer'),
-  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-  boxShadow: isPending 
-    ? '0 0 0 2px rgba(25, 118, 210, 0.5)' 
-    : '0 1px 3px rgba(0,0,0,0.12)',
+  transition: 'background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
   '&:hover': {
     boxShadow: blocked
       ? '0 1px 3px rgba(0,0,0,0.12)'
-      : (isPending 
-      ? '0 0 0 2px rgba(25, 118, 210, 0.5)'
-      : '0 4px 8px rgba(0,0,0,0.2)'),
+      : '0 4px 8px rgba(0,0,0,0.2)',
     transform: blocked || isPending ? 'none' : 'translateY(-2px)',
   },
   display: 'flex',
@@ -39,17 +35,8 @@ const ShiftCell = styled(Box, {
   minHeight: '46px',
   fontWeight: 500,
   gap: theme.spacing(0.75),
-  // More pronounced visual feedback for pending operations
-  opacity: isPending ? 0.8 : 1,
   position: 'relative',
   overflow: 'hidden',
-  // Add a subtle pulse animation when pending
-  animation: isPending && !blocked ? 'pulse 1.5s infinite' : 'none',
-  '@keyframes pulse': {
-    '0%': { opacity: 0.7 },
-    '50%': { opacity: 0.9 },
-    '100%': { opacity: 0.7 }
-  }
 }));
 
 // Move format functions outside component
@@ -310,17 +297,10 @@ const ShiftGrid = ({
                               ? translations.grid.slotAvailable
                               : translations.grid.slotUnavailable)}
                         </Box>
-                        {isPending ? (
-                          <CircularProgress 
-                            size={16} 
-                            thickness={5} 
-                            sx={{ ml: 1 }} 
-                          />
-                        ) : (
-                          available ? 
-                            <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
-                            <CloseIcon fontSize="small" sx={{ ml: 1 }} />
-                        )}
+                        {available ? 
+                          <CheckIcon fontSize="small" sx={{ ml: 1 }} /> : 
+                          <CloseIcon fontSize="small" sx={{ ml: 1 }} />
+                        }
                       </ShiftCell>
                     ) : null}
                   </TableCell>

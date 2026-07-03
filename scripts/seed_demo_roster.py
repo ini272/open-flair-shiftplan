@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import requests
 
+DEFAULT_MAX_GROUP_SIZE = 3
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed demo participants and teams via API.")
@@ -81,6 +83,17 @@ def parse_roster_file(path: str) -> tuple[list[str], list[list[str]]]:
         raise ValueError("No participants or teams found in roster file.")
 
     return solos, teams
+
+
+def validate_team_sizes(teams: list[list[str]], max_group_size: int) -> None:
+    oversized_teams = [team for team in teams if len(team) > max_group_size]
+    if not oversized_teams:
+        return
+
+    formatted_teams = "; ".join(", ".join(member for member in team) for team in oversized_teams)
+    raise ValueError(
+        f"Roster contains teams larger than {max_group_size}: {formatted_teams}"
+    )
 
 
 def slugify_name(value: str) -> str:
@@ -243,6 +256,7 @@ def format_group_name(member_names: list[str]) -> str:
 def main() -> int:
     args = parse_args()
     solos, teams = parse_roster_file(args.roster)
+    validate_team_sizes(teams, DEFAULT_MAX_GROUP_SIZE)
 
     participant_session = login(args.api_url, args.participant_access_code)
     coordinator_session = login(args.api_url, args.coordinator_access_code)
@@ -290,14 +304,13 @@ def main() -> int:
 
         group_name = format_group_name([member.raw_name for member in allocated_members])
         group = create_or_lookup_group(coordinator_session, args.api_url, group_name)
-        max_group_size = max(4, len(allocated_members))
         for user in user_records:
             add_user_to_group(
                 coordinator_session,
                 args.api_url,
                 group_id=group["id"],
                 user_id=user["id"],
-                max_group_size=max_group_size,
+                max_group_size=DEFAULT_MAX_GROUP_SIZE,
             )
 
         team_rows.append((group_name, allocated_members))
