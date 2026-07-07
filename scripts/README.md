@@ -19,6 +19,15 @@ Use `create_test_shifts.py` to create random test shifts for development:
 COORDINATOR_CODE=YOUR_COORDINATOR_CODE python scripts/create_test_shifts.py
 ```
 
+## Demo Profiles
+Use `seed_demo_profiles.py` to create deterministic demo users and a demo group with different availability patterns:
+
+```bash
+python scripts/seed_demo_profiles.py --api-url http://localhost:8000
+```
+
+This script assumes shifts already exist and uses the normal access-code login flow.
+
 ## Configuration
 Edit `festival_schedule.yaml` to customize:
 - Festival dates

@@ -821,37 +821,49 @@ def generate_shift_plan(
             for shift in active_shifts
         }
 
-        shifts_by_slot_key: Dict[Tuple[str, Tuple[int, int, int, int]], List[Any]] = {}
-        for shift in active_shifts:
-            shifts_by_slot_key.setdefault(shift_slot_key[shift.id], []).append(shift)
+        shift_order_tiebreak = {
+            shift.id: rng.random()
+            for shift in active_shifts
+        }
 
-        preferred_unit_count = {}
+        shifts_by_slot: Dict[Tuple[str, Tuple[int, int, int, int]], List[Any]] = {}
         for shift in active_shifts:
-            shift_location = get_shift_location_key(shift)
-            preferred_unit_count[shift.id] = sum(
-                1
-                for unit in planning_units
-                if shift.id in unit_available_shift_ids[unit["key"]]
-                and (unit.get("location_preference") or "both") == shift_location
-            )
+            shifts_by_slot.setdefault(shift_slot_key[shift.id], []).append(shift)
 
         sorted_slot_keys = sorted(
-            shifts_by_slot_key,
+            shifts_by_slot.keys(),
             key=lambda slot_key: (
-                0 if is_priority_evening_shift(shifts_by_slot_key[slot_key][0]) else 1,
-                shift_slot_index[shifts_by_slot_key[slot_key][0].id],
-                min(potential_unit_count[shift.id] for shift in shifts_by_slot_key[slot_key]),
-                shifts_by_slot_key[slot_key][0].start_time.date(),
-                shifts_by_slot_key[slot_key][0].start_time,
-                min(shift.id for shift in shifts_by_slot_key[slot_key]),
+                0 if any(is_priority_evening_shift(shift) for shift in shifts_by_slot[slot_key]) else 1,
+                shift_slot_index[shifts_by_slot[slot_key][0].id],
+                min(get_planner_day_start(shift).date() for shift in shifts_by_slot[slot_key]),
+                min(potential_unit_count[shift.id] for shift in shifts_by_slot[slot_key]),
+                min(shift.start_time for shift in shifts_by_slot[slot_key]),
+                min(shift.id for shift in shifts_by_slot[slot_key]),
             ),
         )
+
+        sorted_shifts = [
+            shift
+            for slot_key in sorted_slot_keys
+            for shift in sorted(
+                shifts_by_slot[slot_key],
+                key=lambda shift: (
+                    potential_unit_count[shift.id],
+                    shift_order_tiebreak[shift.id],
+                    shift.id,
+                ),
+            )
+        ]
 
         unit_assignments: Dict[str, List[Any]] = {unit["key"]: [] for unit in planning_units}
         unit_shift_count: Dict[str, int] = {unit["key"]: 0 for unit in planning_units}
         unit_assigned_days: Dict[str, Set[str]] = {unit["key"]: set() for unit in planning_units}
         unit_day_slots: Dict[str, Dict[str, List[int]]] = {unit["key"]: {} for unit in planning_units}
         unit_evening_count: Dict[str, int] = {unit["key"]: 0 for unit in planning_units}
+        unit_location_count: Dict[str, Dict[str, int]] = {
+            unit["key"]: {"weinzelt": 0, "bierwagen": 0}
+            for unit in planning_units
+        }
         user_shift_count = {user.id: 0 for user in active_users}
 
         def unit_has_time_conflict(unit: Dict[str, Any], shift: Any) -> bool:
@@ -918,8 +930,16 @@ def generate_shift_plan(
                     score -= 35 * unit_evening_count[unit_key]
 
             # Respect preferred location when possible without making it a hard rule.
-            if location_preference != "both" and shift_location != "both":
-                if location_preference == shift_location:
+            if shift_location != "both":
+                if location_preference == "both":
+                    other_location = (
+                        "bierwagen" if shift_location == "weinzelt" else "weinzelt"
+                    )
+                    score += (
+                        unit_location_count[unit_key][other_location]
+                        - unit_location_count[unit_key][shift_location]
+                    ) * 7
+                elif location_preference == shift_location:
                     score += 14
                 else:
                     score -= 8
@@ -928,17 +948,18 @@ def generate_shift_plan(
 
         for slot_key in sorted_slot_keys:
             slot_shifts = sorted(
-                shifts_by_slot_key[slot_key],
+                shifts_by_slot[slot_key],
                 key=lambda shift: (
-                    -preferred_unit_count[shift.id],
+                    potential_unit_count[shift.id],
+                    shift_order_tiebreak[shift.id],
                     shift.id,
                 ),
             )
 
             span.add_event("processing_shift_slot", {
-                "slot_key": str(slot_key),
-                "shift_ids": [shift.id for shift in slot_shifts],
-                "titles": [shift.title for shift in slot_shifts],
+                "slot_day": slot_key[0],
+                "slot_signature": str(slot_key[1]),
+                "shift_ids": ",".join(str(shift.id) for shift in slot_shifts),
             })
 
             remaining_capacity_by_shift = {
@@ -946,27 +967,17 @@ def generate_shift_plan(
                 for shift in slot_shifts
             }
 
-            if all(remaining_capacity <= 0 for remaining_capacity in remaining_capacity_by_shift.values()):
-                span.add_event("shift_slot_already_full", {"slot_key": str(slot_key)})
-                continue
-
-            assigned_unit_keys_for_slot: Set[str] = set()
-
-            while any(remaining_capacity > 0 for remaining_capacity in remaining_capacity_by_shift.values()):
-                progress_made = False
+            while any(capacity > 0 for capacity in remaining_capacity_by_shift.values()):
+                candidate_entries = []
+                preferred_candidate_entries = []
 
                 for shift in slot_shifts:
                     remaining_capacity = remaining_capacity_by_shift[shift.id]
                     if remaining_capacity <= 0:
                         continue
 
-                    eligible_units = []
-
                     for unit in planning_units:
                         unit_key = unit["key"]
-
-                        if unit_key in assigned_unit_keys_for_slot:
-                            continue
 
                         if shift.id not in unit_available_shift_ids[unit_key]:
                             continue
@@ -974,7 +985,10 @@ def generate_shift_plan(
                         if unit["size"] > remaining_capacity:
                             continue
 
-                        if any(user_shift_count[user.id] >= max_shifts_per_user for user in unit["members"]):
+                        if any(
+                            user_shift_count[user.id] >= max_shifts_per_user
+                            for user in unit["members"]
+                        ):
                             max_shifts_limit_hits += 1
                             continue
 
@@ -982,94 +996,98 @@ def generate_shift_plan(
                             conflicts_avoided += 1
                             continue
 
-                        eligible_units.append(unit)
+                        candidate_entry = {
+                            "score": score_unit_for_shift(unit, shift),
+                            "unit_shift_count": unit_shift_count[unit_key],
+                            "shift_candidate_count": potential_unit_count[shift.id],
+                            "shift_order_tiebreak": shift_order_tiebreak[shift.id],
+                            "sort_order": unit["sort_order"],
+                            "shift": shift,
+                            "unit": unit,
+                        }
+                        candidate_entries.append(candidate_entry)
 
-                    if not eligible_units:
-                        continue
+                        if not unit_would_create_long_stretch(unit, shift):
+                            preferred_candidate_entries.append(candidate_entry)
 
-                    preferred_units = [
-                        unit for unit in eligible_units
-                        if not unit_would_create_long_stretch(unit, shift)
-                    ]
+                if preferred_candidate_entries:
+                    candidate_entries = preferred_candidate_entries
 
-                    if preferred_units:
-                        eligible_units = preferred_units
+                if not candidate_entries:
+                    break
 
-                    scored_units = sorted(
-                        (
-                            {
-                                "score": score_unit_for_shift(unit, shift),
-                                "unit_shift_count": unit_shift_count[unit["key"]],
-                                "sort_order": unit["sort_order"],
-                                "unit": unit,
-                            }
-                            for unit in eligible_units
-                        ),
-                        key=lambda item: (-item["score"], item["unit_shift_count"], item["sort_order"]),
-                    )
+                scored_candidates = sorted(
+                    candidate_entries,
+                    key=lambda item: (
+                        -item["score"],
+                        item["unit_shift_count"],
+                        item["shift_candidate_count"],
+                        item["shift_order_tiebreak"],
+                        item["sort_order"],
+                    ),
+                )
 
-                    best_score = scored_units[0]["score"]
-                    top_candidate_entries = [
-                        entry
-                        for entry in scored_units
-                        if best_score - entry["score"] <= PLANNER_RANDOMIZATION_SCORE_WINDOW
-                    ]
-                    randomized_choice = len(top_candidate_entries) > 1
-                    if randomized_choice:
-                        randomized_decisions += 1
+                best_score = scored_candidates[0]["score"]
+                top_candidate_entries = [
+                    entry
+                    for entry in scored_candidates
+                    if best_score - entry["score"] <= PLANNER_RANDOMIZATION_SCORE_WINDOW
+                ]
+                if len(top_candidate_entries) > 1:
+                    randomized_decisions += 1
 
-                    selected_entry = rng.choice(top_candidate_entries)
-                    selected_unit = selected_entry["unit"]
-                    selected_unit_key = selected_unit["key"]
-                    selected_day_key = get_shift_day_key(shift)
+                selected_entry = rng.choice(top_candidate_entries)
+                selected_shift = selected_entry["shift"]
+                selected_unit = selected_entry["unit"]
+                selected_unit_key = selected_unit["key"]
+                selected_day_key = get_shift_day_key(selected_shift)
 
-                    assigned_unit_keys_for_slot.add(selected_unit_key)
-                    unit_assignments[selected_unit_key].append(shift)
-                    unit_shift_count[selected_unit_key] += 1
-                    unit_assigned_days[selected_unit_key].add(selected_day_key)
-                    unit_day_slots[selected_unit_key].setdefault(selected_day_key, []).append(
-                        shift_slot_index[shift.id]
-                    )
+                unit_assignments[selected_unit_key].append(selected_shift)
+                unit_shift_count[selected_unit_key] += 1
+                unit_assigned_days[selected_unit_key].add(selected_day_key)
+                unit_day_slots[selected_unit_key].setdefault(selected_day_key, []).append(
+                    shift_slot_index[selected_shift.id]
+                )
 
-                    if is_priority_evening_shift(shift):
-                        unit_evening_count[selected_unit_key] += 1
+                if is_priority_evening_shift(selected_shift):
+                    unit_evening_count[selected_unit_key] += 1
 
-                    if selected_unit["type"] == "group":
-                        selected_group = selected_unit["group"]
-                        if selected_group not in shift.groups:
-                            shift.groups.append(selected_group)
-                        group_assignments += 1
-                    else:
-                        selected_group = None
-                        individual_assignments += 1
+                selected_location = get_shift_location_key(selected_shift)
+                if selected_location in ("weinzelt", "bierwagen"):
+                    unit_location_count[selected_unit_key][selected_location] += 1
 
-                    for user in selected_unit["members"]:
-                        if user not in shift.users:
-                            shift.users.append(user)
-                        user_shift_count[user.id] += 1
+                if selected_unit["type"] == "group":
+                    selected_group = selected_unit["group"]
+                    if selected_group not in selected_shift.groups:
+                        selected_shift.groups.append(selected_group)
+                    group_assignments += 1
+                else:
+                    selected_group = None
+                    individual_assignments += 1
 
-                        assignments.append({
-                            "shift_id": shift.id,
-                            "shift_title": shift.title,
-                            "user_id": user.id,
-                            "username": user.username,
-                            "assigned_via": "group" if selected_unit["type"] == "group" else "individual",
-                            "group_name": selected_group.name if selected_group else None,
-                        })
+                for user in selected_unit["members"]:
+                    if user not in selected_shift.users:
+                        selected_shift.users.append(user)
+                    user_shift_count[user.id] += 1
 
-                    remaining_capacity_by_shift[shift.id] -= selected_unit["size"]
-                    progress_made = True
-
-                    span.add_event("planning_unit_assigned", {
-                        "shift_id": shift.id,
-                        "planning_unit": selected_unit["label"],
-                        "assigned_via": selected_unit["type"],
-                        "unit_size": selected_unit["size"],
-                        "remaining_capacity": remaining_capacity_by_shift[shift.id],
+                    assignments.append({
+                        "shift_id": selected_shift.id,
+                        "shift_title": selected_shift.title,
+                        "user_id": user.id,
+                        "username": user.username,
+                        "assigned_via": "group" if selected_unit["type"] == "group" else "individual",
+                        "group_name": selected_group.name if selected_group else None,
                     })
 
-                if not progress_made:
-                    break
+                remaining_capacity_by_shift[selected_shift.id] -= selected_unit["size"]
+
+                span.add_event("planning_unit_assigned", {
+                    "shift_id": selected_shift.id,
+                    "planning_unit": selected_unit["label"],
+                    "assigned_via": selected_unit["type"],
+                    "unit_size": selected_unit["size"],
+                    "remaining_capacity": remaining_capacity_by_shift[selected_shift.id],
+                })
         
         # Commit all changes
         try:
@@ -1081,7 +1099,7 @@ def generate_shift_plan(
             raise HTTPException(status_code=500, detail=f"Failed to save assignments: {str(e)}")
         
         # Calculate statistics
-        assigned_shifts = len([s for s in active_shifts if len(s.users) > 0])
+        assigned_shifts = len([s for s in sorted_shifts if len(s.users) > 0])
         total_assignments = len(assignments)
         avg_per_user = total_assignments / len(active_users) if active_users else 0
         

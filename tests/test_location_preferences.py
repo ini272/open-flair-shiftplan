@@ -277,6 +277,178 @@ def test_generate_shift_plan_splits_small_crews_across_parallel_locations(authen
     assert assigned_shift_by_user[weinzelt_user_id] == weinzelt_shift_id
 
 
+def test_generate_shift_plan_chooses_preferred_location_within_parallel_slot_for_scarce_unit(authenticated_client):
+    target_user_id = create_participant_user(
+        authenticated_client,
+        "slot-pref-target@example.com",
+        "slotpreftarget",
+    )["id"]
+    filler_user_id = create_participant_user(
+        authenticated_client,
+        "slot-pref-filler@example.com",
+        "slotpreffiller",
+    )["id"]
+
+    login_as_coordinator(authenticated_client)
+    authenticated_client.put(
+        f"/users/{target_user_id}",
+        json={"location_preference": "weinzelt"},
+    )
+
+    parallel_start = datetime(2026, 8, 7, 14, 0)
+    parallel_end = parallel_start + timedelta(hours=2)
+
+    weinzelt_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Slot-Praferenz",
+            "start_time": parallel_start.isoformat(),
+            "end_time": parallel_end.isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    bierwagen_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Bierwagen Slot-Praferenz",
+            "start_time": parallel_start.isoformat(),
+            "end_time": parallel_end.isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    extra_shift_ids = []
+    for extra_start in (
+        datetime(2026, 8, 8, 12, 0),
+        datetime(2026, 8, 8, 14, 0),
+        datetime(2026, 8, 8, 16, 0),
+        datetime(2026, 8, 8, 18, 0),
+    ):
+        extra_shift_ids.append(
+            authenticated_client.post(
+                "/shifts/",
+                json={
+                    "title": f"Weinzelt Zusatz {extra_start.hour}",
+                    "start_time": extra_start.isoformat(),
+                    "end_time": (extra_start + timedelta(hours=2)).isoformat(),
+                    "capacity": 1,
+                },
+            ).json()["id"]
+        )
+
+    login_as_participant(authenticated_client)
+    authenticated_client.post(
+        "/users/lookup",
+        json={"email": "slot-pref-target@example.com"},
+    )
+    for shift_id in extra_shift_ids:
+        opt_out_response = authenticated_client.post(
+            "/shifts/user-opt-out",
+            json={"shift_id": shift_id, "user_id": target_user_id},
+        )
+        assert opt_out_response.status_code == 200
+
+    for seed in range(12):
+        login_as_coordinator(authenticated_client)
+        response = authenticated_client.post(
+            f"/shifts/generate-plan?max_shifts_per_user=1&planner_seed={seed}"
+        )
+        assert response.status_code == 200
+
+        assignments = response.json()["assignments"]
+        assigned_user_by_shift = {
+            assignment["shift_id"]: assignment["user_id"]
+            for assignment in assignments
+        }
+
+        assert assigned_user_by_shift[weinzelt_shift_id] == target_user_id
+        assert assigned_user_by_shift[bierwagen_shift_id] == filler_user_id
+
+
+def test_generate_shift_plan_randomizes_parallel_location_order_for_both_preference(authenticated_client):
+    target_user_id = create_participant_user(
+        authenticated_client,
+        "both-target@example.com",
+        "bothtarget",
+    )["id"]
+    create_participant_user(
+        authenticated_client,
+        "both-filler@example.com",
+        "bothfiller",
+    )
+
+    login_as_coordinator(authenticated_client)
+
+    parallel_start = datetime(2026, 8, 7, 14, 0)
+    parallel_end = parallel_start + timedelta(hours=2)
+    later_start = datetime(2026, 8, 7, 16, 0)
+    later_end = later_start + timedelta(hours=2)
+
+    weinzelt_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Parallel Fairness",
+            "start_time": parallel_start.isoformat(),
+            "end_time": parallel_end.isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    bierwagen_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Bierwagen Parallel Fairness",
+            "start_time": parallel_start.isoformat(),
+            "end_time": parallel_end.isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    extra_shift_id = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Weinzelt Zusatzdienst",
+            "start_time": later_start.isoformat(),
+            "end_time": later_end.isoformat(),
+            "capacity": 1,
+        },
+    ).json()["id"]
+
+    login_as_participant(authenticated_client)
+    authenticated_client.post(
+        "/users/lookup",
+        json={"email": "both-target@example.com"},
+    )
+    opt_out_response = authenticated_client.post(
+        "/shifts/user-opt-out",
+        json={"shift_id": extra_shift_id, "user_id": target_user_id},
+    )
+    assert opt_out_response.status_code == 200
+
+    observed_locations = set()
+    for seed in range(12):
+        login_as_coordinator(authenticated_client)
+        response = authenticated_client.post(
+            f"/shifts/generate-plan?max_shifts_per_user=1&planner_seed={seed}"
+        )
+        assert response.status_code == 200
+
+        assignments = response.json()["assignments"]
+        target_assignment = next(
+            assignment
+            for assignment in assignments
+            if assignment["user_id"] == target_user_id
+        )
+
+        if target_assignment["shift_id"] == weinzelt_shift_id:
+            observed_locations.add("weinzelt")
+        elif target_assignment["shift_id"] == bierwagen_shift_id:
+            observed_locations.add("bierwagen")
+
+    assert observed_locations == {"weinzelt", "bierwagen"}
+
+
 def test_generate_shift_plan_respects_slot_opt_outs_for_parallel_shifts(authenticated_client):
     user_id = create_participant_user(
         authenticated_client,
