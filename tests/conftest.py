@@ -10,6 +10,10 @@ from sqlalchemy.pool import StaticPool
 # Add the project root directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# App startup performs schema backfills on import, so point it at a writable
+# throwaway DB before importing app.main.
+os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/open_flair_test_bootstrap.db")
+
 # Now import the app
 from app.main import app
 from app.database import Base, get_db
