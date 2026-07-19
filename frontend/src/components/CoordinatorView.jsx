@@ -4,7 +4,12 @@ import {
   Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Paper,
   Stack,
   TextField,
@@ -15,6 +20,8 @@ import {
 import { styled } from '@mui/material/styles';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import CoordinatorShiftGrid from './CoordinatorShiftGrid';
 import CoordinatorPersonView from './CoordinatorPersonView';
 import { groupService, shiftService } from '../services/api';
@@ -50,6 +57,9 @@ const CoordinatorView = ({ shifts, users }) => {
   const [groupOptOuts, setGroupOptOuts] = useState({});
   const [loadingSelectionContext, setLoadingSelectionContext] = useState(false);
   const [selectionContextLoaded, setSelectionContextLoaded] = useState(false);
+  const [isPlanReleased, setIsPlanReleased] = useState(false);
+  const [isUpdatingPlanPublication, setIsUpdatingPlanPublication] = useState(false);
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const registeredPeopleCount = users?.length || 0;
 
   useEffect(() => {
@@ -82,6 +92,19 @@ const CoordinatorView = ({ shifts, users }) => {
     };
 
     loadTeamDirectory();
+  }, []);
+
+  useEffect(() => {
+    const loadPlanPublication = async () => {
+      try {
+        const response = await shiftService.getPlanPublicationStatus();
+        setIsPlanReleased(response.data.is_released);
+      } catch (loadError) {
+        console.log('Failed to load plan publication status:', loadError);
+      }
+    };
+
+    loadPlanPublication();
   }, []);
 
   const ensureSelectionContextLoaded = useCallback(async () => {
@@ -164,7 +187,7 @@ const CoordinatorView = ({ shifts, users }) => {
     }
   }, [ensureSelectionContextLoaded, viewMode]);
 
-  const handleGeneratePlan = async () => {
+  const generatePlan = async () => {
     setIsGenerating(true);
     setError(null);
 
@@ -177,6 +200,30 @@ const CoordinatorView = ({ shifts, users }) => {
       setError(translations.coordinator.planGenerationFailed);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleGeneratePlan = () => {
+    if (isPlanReleased) {
+      setRegenerateDialogOpen(true);
+      return;
+    }
+
+    generatePlan();
+  };
+
+  const handlePlanPublicationToggle = async () => {
+    setIsUpdatingPlanPublication(true);
+    setError(null);
+
+    try {
+      const response = await shiftService.setPlanPublicationStatus(!isPlanReleased);
+      setIsPlanReleased(response.data.is_released);
+    } catch (publicationError) {
+      console.error('Error updating plan publication:', publicationError);
+      setError(translations.coordinator.planPublicationFailed);
+    } finally {
+      setIsUpdatingPlanPublication(false);
     }
   };
 
@@ -323,6 +370,27 @@ const CoordinatorView = ({ shifts, users }) => {
             >
               {translations.coordinator.resetPlan}
             </Button>
+            <Button
+              variant={isPlanReleased ? 'outlined' : 'contained'}
+              color={isPlanReleased ? 'warning' : 'primary'}
+              size="small"
+              startIcon={
+                isUpdatingPlanPublication
+                  ? <CircularProgress size={18} color="inherit" />
+                  : (isPlanReleased ? <VisibilityOffIcon /> : <VisibilityIcon />)
+              }
+              onClick={handlePlanPublicationToggle}
+              disabled={
+                isGenerating
+                || isUpdatingPlanPublication
+                || (!isPlanReleased && !currentAssignments)
+              }
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              {isPlanReleased
+                ? translations.coordinator.withdrawPlanRelease
+                : translations.coordinator.releasePlan}
+            </Button>
           </Stack>
 
           <TextField
@@ -341,6 +409,14 @@ const CoordinatorView = ({ shifts, users }) => {
           >
             {`${translations.coordinator.registeredPeople}: ${registeredPeopleCount}`}
           </Typography>
+          <Chip
+            size="small"
+            color={isPlanReleased ? 'success' : 'default'}
+            variant={isPlanReleased ? 'filled' : 'outlined'}
+            label={isPlanReleased
+              ? translations.coordinator.planReleased
+              : translations.coordinator.planNotReleased}
+          />
         </Stack>
       </ActionBar>
 
@@ -451,6 +527,35 @@ const CoordinatorView = ({ shifts, users }) => {
           loadingSelectionContext={loadingSelectionContext || !selectionContextLoaded}
         />
       )}
+
+      <Dialog
+        open={regenerateDialogOpen}
+        onClose={() => !isGenerating && setRegenerateDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{translations.coordinator.regenerateReleasedTitle}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {translations.coordinator.regenerateReleasedBody}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRegenerateDialogOpen(false)} disabled={isGenerating}>
+            {translations.cancel}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setRegenerateDialogOpen(false);
+              generatePlan();
+            }}
+            disabled={isGenerating}
+          >
+            {translations.coordinator.regenerateReleasedConfirm}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

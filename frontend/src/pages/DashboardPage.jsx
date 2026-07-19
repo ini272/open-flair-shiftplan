@@ -5,11 +5,13 @@ import {
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import PersonIcon from '@mui/icons-material/Person';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { useNavigate } from 'react-router-dom';
 import { authService, userService, shiftService } from '../services/api';
 import ShiftGrid from '../components/ShiftGrid';
 import CoordinatorView from '../components/CoordinatorView';
+import ParticipantAssignments from '../components/ParticipantAssignments';
 import Logo from '../components/Logo';
 import { translations } from '../utils/translations';
 import { isUnder16RestrictedShift } from '../utils/shiftRestrictions';
@@ -21,32 +23,22 @@ const DashboardPage = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [optedOutShifts, setOptedOutShifts] = useState([]);
+  const [savedOptedOutShifts, setSavedOptedOutShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCoordinator, setIsCoordinator] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [pendingOperations, setPendingOperations] = useState({});
-  const [batchPendingDays, setBatchPendingDays] = useState({}); // New state for batch operations
+  const [isSavingAvailability, setIsSavingAvailability] = useState(false);
+  const [availabilitySaveNotice, setAvailabilitySaveNotice] = useState(false);
   const [currentTab, setCurrentTab] = useState(0);
   const [userGroup, setUserGroup] = useState(null);
   const [locationPreference, setLocationPreference] = useState('both');
   const [isSavingLocationPreference, setIsSavingLocationPreference] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [participantPlan, setParticipantPlan] = useState({ is_released: false, assignments: [] });
+  const [isLoadingParticipantPlan, setIsLoadingParticipantPlan] = useState(false);
+  const [participantPlanError, setParticipantPlanError] = useState(false);
   const navigate = useNavigate();
-
-  const getShiftSlotKey = useCallback((shift) => {
-    const start = new Date(shift.start_time);
-    const end = new Date(shift.end_time);
-    const dayKey = start.toISOString().split('T')[0];
-    const timeKey = [
-      start.getHours(),
-      start.getMinutes(),
-      end.getHours(),
-      end.getMinutes(),
-    ].join(':');
-
-    return `${dayKey}-${timeKey}`;
-  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -101,7 +93,9 @@ const DashboardPage = () => {
         
         // Get user's opted-out shifts
         const optOutsResponse = await shiftService.getUserOptOuts(userId);
-        setOptedOutShifts(optOutsResponse.data.map(shift => shift.id));
+        const optOutShiftIds = optOutsResponse.data.map((shift) => shift.id);
+        setOptedOutShifts(optOutShiftIds);
+        setSavedOptedOutShifts(optOutShiftIds);
       } catch (error) {
         console.error('Error fetching data:', error);
         navigate('/login');
@@ -128,6 +122,31 @@ const DashboardPage = () => {
     
     fetchUserGroup();
   }, [user?.group_id, userGroup]);
+
+  const loadParticipantPlan = useCallback(async () => {
+    if (!user || isCoordinator) {
+      return;
+    }
+
+    setIsLoadingParticipantPlan(true);
+    setParticipantPlanError(false);
+
+    try {
+      const response = await shiftService.getMyAssignments();
+      setParticipantPlan(response.data);
+    } catch (error) {
+      console.error('Error loading participant plan:', error);
+      setParticipantPlanError(true);
+    } finally {
+      setIsLoadingParticipantPlan(false);
+    }
+  }, [isCoordinator, user]);
+
+  useEffect(() => {
+    if (currentTab === 1 && !isCoordinator) {
+      loadParticipantPlan();
+    }
+  }, [currentTab, isCoordinator, loadParticipantPlan]);
 
   const handleLogout = async () => {
     try {
@@ -182,6 +201,27 @@ const DashboardPage = () => {
     )
   ), [shifts, user?.is_under_16]);
 
+  const participantViewOption = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+
+    if (user.group_id) {
+      return {
+        id: user.group_id,
+        type: 'group',
+        label: userGroup?.name || 'Mein Team',
+      };
+    }
+
+    return {
+      id: user.id,
+      type: 'user',
+      label: user.username,
+      isUnder16: Boolean(user.is_under_16),
+    };
+  }, [user, userGroup]);
+
   const handleLocationChange = useCallback(async (event, newLocation) => {
     if (!user || !newLocation || newLocation === locationPreference) {
       return;
@@ -219,218 +259,83 @@ const DashboardPage = () => {
     }
   }, [locationPreference, user]);
 
-  // New batch day toggle handler
-  const handleBatchDayToggle = useCallback(async (dayShifts, shouldSelect) => {
-    if (!user || dayShifts.length === 0) return;
+  const hasUnsavedAvailabilityChanges = useMemo(() => {
+    const currentOptOuts = new Set(optedOutShifts);
+    const savedOptOuts = new Set(savedOptedOutShifts);
 
+    return currentOptOuts.size !== savedOptOuts.size || [...currentOptOuts].some(
+      (shiftId) => !savedOptOuts.has(shiftId)
+    );
+  }, [optedOutShifts, savedOptedOutShifts]);
+
+  const handleBatchDayToggle = useCallback((dayShifts, shouldSelect) => {
     const actionableDayShifts = dayShifts.filter((shift) => !blockedShiftIdSet.has(shift.id));
     if (actionableDayShifts.length === 0) {
       return;
     }
-    
-    // Get the day from the first shift for tracking
-    const day = new Date(actionableDayShifts[0].start_time).toISOString().split('T')[0];
-    
-    // Set day as pending
-    setBatchPendingDays(prev => ({ ...prev, [day]: true }));
-    
-    try {
-      const operations = [];
-      const shiftsToProcess = [];
-      
+
+    setAvailabilitySaveNotice(false);
+    setOptedOutShifts((previousOptOuts) => {
+      const updatedOptOuts = new Set(previousOptOuts);
+
       for (const shift of actionableDayShifts) {
-        const isCurrentlyOptedOut = optedOutShifts.includes(shift.id);
-        const isCurrentlySelected = !isCurrentlyOptedOut;
-        
-        // Only process if the action is needed
-        if (shouldSelect && !isCurrentlySelected) {
-          shiftsToProcess.push({ shift, action: 'opt_in' });
-        } else if (!shouldSelect && isCurrentlySelected) {
-          shiftsToProcess.push({ shift, action: 'opt_out' });
-        }
-      }
-      
-      // Set pending state for all shifts being processed
-      const pendingShiftIds = shiftsToProcess.map(item => item.shift.id);
-      setPendingOperations(prev => {
-        const updated = { ...prev };
-        pendingShiftIds.forEach(id => {
-          updated[id] = `batch-${day}-${Date.now()}`;
-        });
-        return updated;
-      });
-      
-      // Optimistically update the UI
-      setOptedOutShifts(prev => {
-        let updated = [...prev];
-        shiftsToProcess.forEach(({ shift, action }) => {
-          if (action === 'opt_in') {
-            updated = updated.filter(id => id !== shift.id);
-          } else if (action === 'opt_out') {
-            if (!updated.includes(shift.id)) {
-              updated.push(shift.id);
-            }
-          }
-        });
-        return updated;
-      });
-      
-      // Process all shifts simultaneously
-      for (const { shift, action } of shiftsToProcess) {
-        if (action === 'opt_in') {
-          operations.push(
-            user.group_id ? 
-              shiftService.optInGroup({
-                shift_id: shift.id,
-                group_id: user.group_id
-              }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
-                .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
-            :
-              shiftService.optInUser({
-                shift_id: shift.id,
-                user_id: user.id
-              }).then(() => ({ shiftId: shift.id, action: 'opt_in', success: true }))
-                .catch(error => ({ shiftId: shift.id, action: 'opt_in', success: false, error }))
-          );
+        if (shouldSelect) {
+          updatedOptOuts.delete(shift.id);
         } else {
-          operations.push(
-            user.group_id ?
-              shiftService.optOutGroup({
-                shift_id: shift.id,
-                group_id: user.group_id
-              }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
-                .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
-            :
-              shiftService.optOutUser({
-                shift_id: shift.id,
-                user_id: user.id
-              }).then(() => ({ shiftId: shift.id, action: 'opt_out', success: true }))
-                .catch(error => ({ shiftId: shift.id, action: 'opt_out', success: false, error }))
-          );
+          updatedOptOuts.add(shift.id);
         }
       }
-      
-      // Wait for all operations to complete
-      const results = await Promise.allSettled(operations);
-      
-      // Process results
-      const successfulOperations = [];
-      const failedOperations = [];
-      const slotOutcomeMap = new Map();
-      
-      results.forEach((result, index) => {
-        const processedShift = shiftsToProcess[index];
-        const slotKey = getShiftSlotKey(processedShift.shift);
-        const currentSlotOutcome = slotOutcomeMap.get(slotKey) || {
-          total: 0,
-          success: 0,
-        };
 
-        currentSlotOutcome.total += 1;
+      return [...updatedOptOuts];
+    });
+  }, [blockedShiftIdSet]);
 
-        if (result.status === 'fulfilled' && result.value.success) {
-          successfulOperations.push(result.value);
-          currentSlotOutcome.success += 1;
-        } else {
-          failedOperations.push(processedShift);
-        }
+  const handleDiscardAvailabilityChanges = useCallback(() => {
+    setOptedOutShifts(savedOptedOutShifts);
+    setAvailabilitySaveNotice(false);
+  }, [savedOptedOutShifts]);
 
-        slotOutcomeMap.set(slotKey, currentSlotOutcome);
+  const handleSaveAvailability = useCallback(async () => {
+    if (!user || isSavingAvailability || !hasUnsavedAvailabilityChanges) {
+      return;
+    }
+
+    const currentOptOuts = new Set(optedOutShifts);
+    const savedOptOuts = new Set(savedOptedOutShifts);
+    const changedShiftIds = new Set([...currentOptOuts, ...savedOptOuts]);
+    const changes = [...changedShiftIds]
+      .filter((shiftId) => currentOptOuts.has(shiftId) !== savedOptOuts.has(shiftId))
+      .map((shiftId) => ({
+        shift_id: shiftId,
+        is_available: !currentOptOuts.has(shiftId),
+      }));
+
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsSavingAvailability(true);
+
+    try {
+      await shiftService.saveAvailability({
+        ...(user.group_id ? { group_id: user.group_id } : { user_id: user.id }),
+        changes,
       });
-      
-      // Revert failed operations in the UI
-      if (failedOperations.length > 0) {
-        setOptedOutShifts(prev => {
-          let updated = [...prev];
-          failedOperations.forEach(({ shift, action }) => {
-            if (action === 'opt_in') {
-              // Revert: add back to opted-out list
-              if (!updated.includes(shift.id)) {
-                updated.push(shift.id);
-              }
-            } else if (action === 'opt_out') {
-              // Revert: remove from opted-out list
-              updated = updated.filter(id => id !== shift.id);
-            }
-          });
-          return updated;
-        });
-      }
-      
-      // Clear pending state for processed shifts
-      setPendingOperations(prev => {
-        const updated = { ...prev };
-        pendingShiftIds.forEach(id => {
-          delete updated[id];
-        });
-        return updated;
-      });
-      
-      // Show results
-      const successCount = Array.from(slotOutcomeMap.values()).filter(
-        (slotOutcome) => slotOutcome.success === slotOutcome.total
-      ).length;
-      const failCount = Array.from(slotOutcomeMap.values()).filter(
-        (slotOutcome) => slotOutcome.success < slotOutcome.total
-      ).length;
-      const formatDate = (dateStr) => {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('de-DE', {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric'
-        });
-      };
-      
-      if (successCount > 0 && failCount === 0) {
-        const successTemplate = shouldSelect
-          ? translations.shifts.batchSelectSuccess
-          : translations.shifts.batchDeselectSuccess;
-        setSnackbar({
-          open: true,
-          message: successTemplate
-            .replace('{count}', successCount)
-            .replace('{day}', formatDate(day)),
-          severity: 'success'
-        });
-      } else if (successCount > 0 && failCount > 0) {
-        setSnackbar({
-          open: true,
-          message: translations.shifts.batchPartialSuccess
-            .replace('{successCount}', successCount)
-            .replace('{failCount}', failCount)
-            .replace('{day}', formatDate(day)),
-          severity: 'warning'
-        });
-      } else if (failCount > 0) {
-        const failedTemplate = shouldSelect
-          ? translations.shifts.batchSelectFailed
-          : translations.shifts.batchDeselectFailed;
-        setSnackbar({
-          open: true,
-          message: failedTemplate
-            .replace('{count}', failCount)
-            .replace('{day}', formatDate(day)),
-          severity: 'error'
-        });
-      }
-      
+
+      setSavedOptedOutShifts([...currentOptOuts]);
+      setAvailabilitySaveNotice(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
-      console.error('Batch operation failed:', error);
+      console.error('Error saving availability:', error);
       setSnackbar({
         open: true,
-        message: translations.shifts.batchOperationFailed,
-        severity: 'error'
+        message: translations.shifts.saveSelectionFailed,
+        severity: 'error',
       });
     } finally {
-      // Clear day pending state
-      setBatchPendingDays(prev => {
-        const updated = { ...prev };
-        delete updated[day];
-        return updated;
-      });
+      setIsSavingAvailability(false);
     }
-  }, [blockedShiftIdSet, getShiftSlotKey, optedOutShifts, user]);
+  }, [hasUnsavedAvailabilityChanges, isSavingAvailability, optedOutShifts, savedOptedOutShifts, user]);
 
   const handleCloseSnackbar = useCallback(() => {
     setSnackbar(prev => ({ ...prev, open: false }));
@@ -477,6 +382,9 @@ const DashboardPage = () => {
           {isCoordinator && (
             <Tab label={translations.shifts.coordinatorView} />
           )}
+          {!isCoordinator && (
+            <Tab label={translations.shifts.myAssignments} />
+          )}
         </Tabs>
       </Box>
 
@@ -492,6 +400,16 @@ const DashboardPage = () => {
           {user?.is_under_16 && (
             <Alert severity="info" sx={{ mb: 2 }}>
               {translations.restrictions.under16EveningShift}
+            </Alert>
+          )}
+
+          {availabilitySaveNotice && (
+            <Alert
+              severity="success"
+              sx={{ mb: 2 }}
+              onClose={() => setAvailabilitySaveNotice(false)}
+            >
+              {translations.shifts.selectionSaved}
             </Alert>
           )}
 
@@ -710,18 +628,81 @@ const DashboardPage = () => {
             >
               <InfoOutlinedIcon sx={{ fontSize: 18 }} />
               <Typography variant="body2">
-                {translations.shifts.selectionAutoSave}
+                {translations.shifts.selectionSaveHint}
               </Typography>
             </Stack>
           </Box>
-          
-          <ShiftGrid 
-            shifts={shifts} 
-            userPreferences={availableShiftIds} 
+
+          <Paper
+            variant="outlined"
+            sx={(theme) => ({
+              mb: 2.5,
+              p: { xs: 1.5, sm: 2 },
+              borderRadius: 3,
+              borderColor: hasUnsavedAvailabilityChanges
+                ? theme.palette.warning.main
+                : theme.palette.divider,
+              backgroundColor: hasUnsavedAvailabilityChanges
+                ? theme.palette.warning.light
+                : 'background.paper',
+            })}
+          >
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              justifyContent="space-between"
+              alignItems={{ sm: 'center' }}
+            >
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  {hasUnsavedAvailabilityChanges
+                    ? translations.shifts.selectionUnsavedChanges
+                    : translations.shifts.selectionNoUnsavedChanges}
+                </Typography>
+                {hasUnsavedAvailabilityChanges && (
+                  <Typography variant="body2" color="text.secondary">
+                    {translations.shifts.selectionSaveHint}
+                  </Typography>
+                )}
+              </Box>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                sx={{ width: { xs: '100%', sm: 'auto' } }}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={handleDiscardAvailabilityChanges}
+                  disabled={!hasUnsavedAvailabilityChanges || isSavingAvailability}
+                  startIcon={<RestartAltIcon />}
+                  fullWidth
+                >
+                  {translations.shifts.discardSelectionChanges}
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleSaveAvailability}
+                  disabled={!hasUnsavedAvailabilityChanges || isSavingAvailability}
+                  startIcon={
+                    isSavingAvailability
+                      ? <CircularProgress size={16} color="inherit" />
+                      : <SaveOutlinedIcon />
+                  }
+                  fullWidth
+                >
+                  {isSavingAvailability
+                    ? translations.shifts.savingSelection
+                    : translations.shifts.saveSelection}
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+
+          <ShiftGrid
+            shifts={shifts}
+            userPreferences={availableShiftIds}
             blockedShiftIds={Array.from(blockedShiftIdSet)}
-            pendingOperations={pendingOperations}
             onBatchDayToggle={handleBatchDayToggle}
-            batchPendingDays={batchPendingDays}
           />
           </Box>
         </Box>
@@ -731,6 +712,18 @@ const DashboardPage = () => {
         <CoordinatorView 
           shifts={shifts} 
           users={allUsers}
+        />
+      )}
+
+      {currentTab === 1 && !isCoordinator && (
+        <ParticipantAssignments
+          plan={participantPlan}
+          isLoading={isLoadingParticipantPlan}
+          error={participantPlanError}
+          onRefresh={loadParticipantPlan}
+          shifts={shifts}
+          selectedViewOption={participantViewOption}
+          optedOutShifts={optedOutShifts}
         />
       )}
 

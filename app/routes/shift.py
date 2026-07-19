@@ -15,12 +15,14 @@ from app.dependencies import (
 )
 from app.schemas.shift import (
     Shift, ShiftCreate, ShiftUpdate, ShiftWithAssignees,
-    ShiftUserBase, ShiftGroupBase, ShiftXlsxExportRequest
+    ParticipantPlan, PlanPublicationStatus, PlanPublicationUpdate,
+    ShiftAvailabilityUpdate, ShiftUserBase, ShiftGroupBase, ShiftXlsxExportRequest
 )
 from app.schemas.user import User
 from app.crud.shift import shift as shift_crud
 from app.crud.user import user as user_crud
 from app.crud.group import group as group_crud
+from app.crud.plan_settings import plan_settings as plan_settings_crud
 from app.security import AuthSession
 from app.xlsx_export import build_shift_plan_xlsx
 
@@ -255,6 +257,77 @@ def get_current_assignments(
             "planner": None,
         }
 
+
+@router.get("/plan-publication", response_model=PlanPublicationStatus)
+def get_plan_publication_status(
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
+) -> Any:
+    """Return whether participants may see the current shift plan."""
+    return {
+        "is_released": plan_settings_crud.assignments_are_released(db),
+    }
+
+
+@router.put("/plan-publication", response_model=PlanPublicationStatus)
+def update_plan_publication_status(
+    publication_update: PlanPublicationUpdate,
+    db: Session = Depends(get_db),
+    _: AuthSession = Depends(require_coordinator),
+) -> Any:
+    """Allow coordinators to show or hide the live plan for participants."""
+    with tracer.start_as_current_span("update-plan-publication") as span:
+        is_released = plan_settings_crud.set_assignments_released(
+            db,
+            is_released=publication_update.is_released,
+        )
+        span.set_attribute("plan.assignments_released", is_released)
+        return {"is_released": is_released}
+
+
+@router.get("/my-assignments", response_model=ParticipantPlan)
+def get_my_published_assignments(
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
+) -> Any:
+    """Return only the authenticated participant's assignments after release."""
+    if auth_session.is_coordinator or auth_session.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Participant account required",
+        )
+
+    current_user = user_crud.get(db, id=auth_session.user_id)
+    if not current_user or not current_user.is_active or current_user.is_coordinator:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Participant account required")
+
+    is_released = plan_settings_crud.assignments_are_released(db)
+    if not is_released:
+        return {"is_released": False, "assignments": []}
+
+    assignments = []
+    for shift in shift_crud.get_by_user(db, user_id=current_user.id, skip=0, limit=1000):
+        assigned_group = next(
+            (
+                group
+                for group in shift.groups
+                if any(member.id == current_user.id for member in group.users)
+            ),
+            None,
+        )
+        assignments.append({
+            "shift_id": shift.id,
+            "title": shift.title,
+            "start_time": shift.start_time,
+            "end_time": shift.end_time,
+            "assigned_via": "group" if assigned_group else "individual",
+            "group_name": assigned_group.name if assigned_group else None,
+        })
+
+    assignments.sort(key=lambda assignment: (assignment["start_time"], assignment["end_time"]))
+    return {"is_released": True, "assignments": assignments}
+
+
 @router.delete("/all-assignments", status_code=status.HTTP_200_OK)
 def clear_all_assignments(
     db: Session = Depends(get_db),
@@ -308,6 +381,128 @@ def export_shift_plan_xlsx(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers=headers,
         )
+
+
+@router.put("/availability", status_code=status.HTTP_200_OK)
+def save_shift_availability(
+    availability_update: ShiftAvailabilityUpdate,
+    db: Session = Depends(get_db),
+    auth_session: AuthSession = Depends(require_auth),
+) -> Any:
+    """Save a person's or group's changed availabilities as one transaction."""
+    with tracer.start_as_current_span("save-shift-availability") as span:
+        span.set_attribute("availability.change_count", len(availability_update.changes))
+
+        shifts_by_id = {}
+        for change in availability_update.changes:
+            shift = shift_crud.get(db, id=change.shift_id)
+            if not shift:
+                raise HTTPException(status_code=404, detail=f"Shift {change.shift_id} not found")
+            shifts_by_id[change.shift_id] = shift
+
+        slot_availability = {}
+        for change in availability_update.changes:
+            slot_key = get_shift_slot_key(shifts_by_id[change.shift_id])
+            previous_value = slot_availability.setdefault(slot_key, change.is_available)
+            if previous_value != change.is_available:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Parallel shifts in the same time slot must have the same availability.",
+                )
+
+        if availability_update.user_id is not None:
+            target_user = user_crud.get(db, id=availability_update.user_id)
+            if not target_user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            ensure_self_or_coordinator(auth_session, target_user.id)
+            if target_user.group_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Users in groups must save availability for their whole group.",
+                )
+
+            if target_user.is_under_16 and any(
+                change.is_available and is_under_16_restricted_shift(shifts_by_id[change.shift_id])
+                for change in availability_update.changes
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Users under 16 cannot select shifts from 20:00 onward.",
+                )
+
+            span.set_attribute("availability.target_type", "user")
+            span.set_attribute("availability.user_id", target_user.id)
+        else:
+            target_group = group_crud.get(db, id=availability_update.group_id)
+            if not target_group:
+                raise HTTPException(status_code=404, detail="Group not found")
+
+            ensure_group_member_or_coordinator(db, auth_session, target_group.id)
+            if any(member.is_under_16 for member in target_group.users) and any(
+                change.is_available and is_under_16_restricted_shift(shifts_by_id[change.shift_id])
+                for change in availability_update.changes
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Groups with users under 16 cannot select shifts from 20:00 onward.",
+                )
+
+            span.set_attribute("availability.target_type", "group")
+            span.set_attribute("availability.group_id", target_group.id)
+
+        try:
+            for change in availability_update.changes:
+                if availability_update.user_id is not None:
+                    updated_shift = (
+                        shift_crud.opt_in_user(
+                            db,
+                            shift_id=change.shift_id,
+                            user_id=availability_update.user_id,
+                            commit=False,
+                        )
+                        if change.is_available
+                        else shift_crud.opt_out_user(
+                            db,
+                            shift_id=change.shift_id,
+                            user_id=availability_update.user_id,
+                            commit=False,
+                        )
+                    )
+                else:
+                    updated_shift = (
+                        shift_crud.opt_in_group(
+                            db,
+                            shift_id=change.shift_id,
+                            group_id=availability_update.group_id,
+                            commit=False,
+                        )
+                        if change.is_available
+                        else shift_crud.opt_out_group(
+                            db,
+                            shift_id=change.shift_id,
+                            group_id=availability_update.group_id,
+                            commit=False,
+                        )
+                    )
+
+                if not updated_shift:
+                    raise RuntimeError(f"Could not update availability for shift {change.shift_id}")
+
+            db.commit()
+        except Exception as error:
+            db.rollback()
+            span.set_attribute("error", str(error))
+            raise HTTPException(
+                status_code=500,
+                detail="Availability changes could not be saved.",
+            ) from error
+
+        return {
+            "message": "Availability changes saved",
+            "updated_shift_ids": [change.shift_id for change in availability_update.changes],
+        }
+
 
 @router.get("/{shift_id}", response_model=ShiftWithAssignees)
 def read_shift(
@@ -1135,6 +1330,7 @@ def shifts_overlap(shift1, shift2):
     """Check if two shifts overlap in time."""
     return (shift1.start_time < shift2.end_time and 
             shift1.end_time > shift2.start_time)
+
 
 @router.post("/user-opt-out", status_code=status.HTTP_200_OK)
 def opt_out_user(

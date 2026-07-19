@@ -62,6 +62,7 @@ export const shiftService = {
   optInUser: (data) => api.post('/shifts/user-opt-in', data),
   optOutGroup: (data) => api.post('/shifts/group-opt-out', data),
   optInGroup: (data) => api.post('/shifts/group-opt-in', data),
+  saveAvailability: (data) => api.put('/shifts/availability', data),
   checkOptOutStatus: (shiftId, userId) => api.get(`/shifts/opt-out-status/${shiftId}/${userId}`),
   getUserOptOuts: (userId) => api.get(`/shifts/user-opt-outs/${userId}`),
   getGroupOptOuts: (groupId) => api.get(`/shifts/group-opt-outs/${groupId}`),
@@ -77,6 +78,11 @@ export const shiftService = {
     { responseType: 'blob' }
   ),
   getCurrentAssignments: () => api.get('/shifts/current-assignments'),
+  getPlanPublicationStatus: () => api.get('/shifts/plan-publication'),
+  setPlanPublicationStatus: (isReleased) => api.put('/shifts/plan-publication', {
+    is_released: isReleased,
+  }),
+  getMyAssignments: () => api.get('/shifts/my-assignments'),
   clearAllAssignments: () => api.delete('/shifts/all-assignments'),
 };
 

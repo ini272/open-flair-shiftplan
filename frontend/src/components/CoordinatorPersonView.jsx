@@ -103,6 +103,7 @@ const CoordinatorPersonView = ({
   userOptOuts,
   groupOptOuts,
   loadingSelectionContext,
+  assignmentsAreScopedToSelectedView = false,
 }) => {
   const assignmentMap = useMemo(() => {
     const map = new Map();
@@ -112,6 +113,11 @@ const CoordinatorPersonView = ({
     }
 
     (generatedAssignments || []).forEach((assignment) => {
+      if (assignmentsAreScopedToSelectedView) {
+        map.set(assignment.shift_id, assignment);
+        return;
+      }
+
       if (selectedViewOption.type === 'user' && assignment.user_id === selectedViewOption.id) {
         map.set(assignment.shift_id, assignment);
       }
@@ -126,7 +132,7 @@ const CoordinatorPersonView = ({
     });
 
     return map;
-  }, [generatedAssignments, selectedViewOption]);
+  }, [assignmentsAreScopedToSelectedView, generatedAssignments, selectedViewOption]);
 
   const optedOutShiftIds = useMemo(() => {
     if (!selectedViewOption) {

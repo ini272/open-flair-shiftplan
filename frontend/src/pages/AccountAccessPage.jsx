@@ -11,6 +11,7 @@ import {
   TextField, 
   Button, 
   Alert,
+  Chip,
   FormControl,
   FormLabel,
   RadioGroup,
@@ -31,6 +32,43 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_GROUP_SIZE = 3;
 
 const isValidEmail = (value) => EMAIL_REGEX.test(value.trim());
+
+const getGroupAgeCategory = (group) => {
+  const members = group?.users || [];
+
+  if (members.length === 0) {
+    return 'empty';
+  }
+
+  const under16Members = members.filter((member) => member.is_under_16).length;
+  if (under16Members === members.length) {
+    return 'under16';
+  }
+
+  if (under16Members === 0) {
+    return 'adult';
+  }
+
+  return 'mixed';
+};
+
+const isGroupAgeCompatible = (group, isUnder16) => {
+  const category = getGroupAgeCategory(group);
+  return category === 'empty' || category === (isUnder16 ? 'under16' : 'adult');
+};
+
+const getGroupAgeLabel = (group) => {
+  switch (getGroupAgeCategory(group)) {
+    case 'under16':
+      return translations.account.under16GroupTag;
+    case 'adult':
+      return translations.account.adultGroupTag;
+    case 'mixed':
+      return translations.account.mixedAgeGroupTag;
+    default:
+      return translations.account.emptyGroupTag;
+  }
+};
 
 const getApiErrorDetail = (error) => {
   const detail = error?.response?.data?.detail;
@@ -56,7 +94,7 @@ const getAccountErrorMessage = (error, fallback, options = {}) => {
     'User not found': translations.account.userNotFound,
     'Failed to add user to group': translations.account.groupJoinFailed,
     'Coordinator accounts cannot join groups': translations.account.coordinatorCannotJoinGroups,
-    'Users under 16 cannot join groups': translations.account.under16GroupHint,
+    'Groups must not mix under-16 and adult members': translations.account.groupAgeMismatch,
   };
 
   if (detailMap[detail]) {
@@ -174,12 +212,6 @@ const AccountAccessPage = () => {
     loadExistingGroups();
   }, [isCoordinatorAccess]);
 
-  useEffect(() => {
-    if (isUnder16 && workPreference === 'group') {
-      setWorkPreference('alone');
-    }
-  }, [isUnder16, workPreference]);
-
   // Handle tab change
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -217,6 +249,14 @@ const AccountAccessPage = () => {
       nextFieldErrors.group = translations.account.groupRequired;
     }
 
+    if (
+      workPreference === 'group'
+      && selectedExistingGroup
+      && !isGroupAgeCompatible(selectedExistingGroup, isUnder16)
+    ) {
+      nextFieldErrors.group = translations.account.groupAgeMismatch;
+    }
+
     if (nextFieldErrors.username || nextFieldErrors.email || nextFieldErrors.group) {
       setNewUserFieldErrors(nextFieldErrors);
       return;
@@ -226,7 +266,7 @@ const AccountAccessPage = () => {
     
     try {
       
-      const wantsGroup = !isCoordinatorAccess && !isUnder16 && workPreference === 'group';
+      const wantsGroup = !isCoordinatorAccess && workPreference === 'group';
 
       // If working in a group, check if group is full BEFORE creating user
       if (wantsGroup) {
@@ -472,7 +512,6 @@ const AccountAccessPage = () => {
                       value="group"
                       control={<Radio />}
                       label={translations.account.workInGroup}
-                      disabled={isUnder16}
                     />
                   </RadioGroup>
                   {isUnder16 && (
@@ -523,32 +562,50 @@ const AccountAccessPage = () => {
                       />
                     )}
                     renderOption={(props, option) => {
+                      const { key, ...optionProps } = props;
                       const group = existingGroups.find(g => g.name === option);
                       const memberNames = group?.users?.map(u => u.username).join(', ') || '';
                       const currentSize = group?.users?.length || 0;
                       const isFull = currentSize >= MAX_GROUP_SIZE;
+                      const isAgeCompatible = group
+                        ? isGroupAgeCompatible(group, isUnder16)
+                        : true;
+                      const ageCategory = getGroupAgeCategory(group);
                       
                       return (
-                        <li {...props}>
+                        <li key={key} {...optionProps}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <GroupIcon fontSize="small" />
                             <Box>
-                              <Typography variant="body2">
-                                {option}
-                                {memberNames && (
-                                  <Typography component="span" variant="body2" color="text.secondary">
-                                    {' '}({memberNames})
-                                  </Typography>
-                                )}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                                <Typography variant="body2">
+                                  {option}
+                                  {memberNames && (
+                                    <Typography component="span" variant="body2" color="text.secondary">
+                                      {' '}({memberNames})
+                                    </Typography>
+                                  )}
+                                </Typography>
+                                <Chip
+                                  label={getGroupAgeLabel(group)}
+                                  size="small"
+                                  color={ageCategory === 'under16' ? 'info' : 'default'}
+                                  variant="outlined"
+                                />
+                              </Box>
                               <Typography variant="caption" color={isFull ? "error.main" : "text.secondary"}>
                                 {currentSize}/{MAX_GROUP_SIZE} {translations.account.groupCapacityLabel}
                                 {isFull && ' - Voll'}
+                                {!isAgeCompatible && ` - ${translations.account.groupNotAvailableForAge}`}
                               </Typography>
                             </Box>
                           </Box>
                         </li>
                       );
+                    }}
+                    getOptionDisabled={(option) => {
+                      const group = existingGroups.find((entry) => entry.name === option);
+                      return Boolean(group && !isGroupAgeCompatible(group, isUnder16));
                     }}
                     noOptionsText={translations.account.noGroupsFoundCreateNew}
                     loading={loadingGroups}
@@ -570,16 +627,33 @@ const AccountAccessPage = () => {
                     </Typography>
                     {selectedExistingGroup ? (
                       <>
-                        <Typography variant="body2" sx={{ mb: 0.35 }}>
-                          {selectedExistingGroup.users?.map((user) => user.username).join(', ') || translations.account.newGroupPreview}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.35, flexWrap: 'wrap' }}>
+                          <Typography variant="body2">
+                            {selectedExistingGroup.users?.map((user) => user.username).join(', ') || translations.account.newGroupPreview}
+                          </Typography>
+                          <Chip
+                            label={getGroupAgeLabel(selectedExistingGroup)}
+                            size="small"
+                            color={getGroupAgeCategory(selectedExistingGroup) === 'under16' ? 'info' : 'default'}
+                            variant="outlined"
+                          />
+                        </Box>
                         <Typography variant="caption" color="text.secondary">
                           {(selectedExistingGroup.users?.length || 0)}/{MAX_GROUP_SIZE} {translations.account.groupCapacityLabel}
                         </Typography>
+                        {!isGroupAgeCompatible(selectedExistingGroup, isUnder16) && (
+                          <Alert severity="warning" sx={{ mt: 1 }}>
+                            {translations.account.groupAgeMismatch}
+                          </Alert>
+                        )}
                       </>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        {trimmedGroupName ? translations.account.newGroupPreview : translations.account.groupHelper}
+                        {trimmedGroupName
+                          ? (isUnder16
+                            ? translations.account.newUnder16GroupPreview
+                            : translations.account.newAdultGroupPreview)
+                          : translations.account.groupHelper}
                       </Typography>
                     )}
                   </Box>

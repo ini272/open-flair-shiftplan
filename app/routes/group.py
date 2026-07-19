@@ -207,15 +207,21 @@ def add_user_to_group(
                 detail="Coordinator accounts cannot join groups",
             )
 
-        if user.is_under_16:
-            span.add_event("under_16_group_membership_blocked", {"user_id": user_id})
-            span.set_attribute("error", "Users under 16 cannot join groups")
+        ensure_self_or_coordinator(auth_session, user_id)
+
+        member_age_groups = {member.is_under_16 for member in group.users}
+        if member_age_groups and (
+            len(member_age_groups) > 1 or user.is_under_16 not in member_age_groups
+        ):
+            span.add_event(
+                "mixed_age_group_membership_blocked",
+                {"group_id": group_id, "user_id": user_id},
+            )
+            span.set_attribute("error", "Groups must not mix under-16 and adult members")
             raise HTTPException(
                 status_code=400,
-                detail="Users under 16 cannot join groups",
+                detail="Groups must not mix under-16 and adult members",
             )
-
-        ensure_self_or_coordinator(auth_session, user_id)
         
         # Check if group has space
         span.add_event("checking_group_capacity")

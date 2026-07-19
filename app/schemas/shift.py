@@ -1,6 +1,6 @@
 from typing import Literal, Optional, List
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class ShiftBase(BaseModel):
     """Base schema with common shift attributes"""
@@ -68,6 +68,61 @@ class ShiftGroupBase(BaseModel):
     """Base schema for shift-group assignments"""
     shift_id: int
     group_id: int
+
+
+class ShiftAvailabilityChange(BaseModel):
+    """One availability change within a combined save request."""
+    shift_id: int
+    is_available: bool
+
+
+class ShiftAvailabilityUpdate(BaseModel):
+    """Save all changed availabilities for one person or group atomically."""
+    user_id: Optional[int] = None
+    group_id: Optional[int] = None
+    changes: List[ShiftAvailabilityChange] = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode='after')
+    def exactly_one_planning_unit_and_unique_shifts(self):
+        if (self.user_id is None) == (self.group_id is None):
+            raise ValueError('Provide exactly one of user_id or group_id')
+
+        shift_ids = [change.shift_id for change in self.changes]
+        if len(shift_ids) != len(set(shift_ids)):
+            raise ValueError('Each shift may only appear once')
+
+        return self
+
+
+class PlanPublicationUpdate(BaseModel):
+    """Set whether participants may see their current assignments."""
+
+    is_released: bool
+
+
+class PlanPublicationStatus(BaseModel):
+    """The current visibility of the shift plan for participants."""
+
+    is_released: bool
+
+
+class ParticipantAssignment(BaseModel):
+    """One currently assigned shift shown to its participant."""
+
+    shift_id: int
+    title: str
+    start_time: datetime
+    end_time: datetime
+    assigned_via: Literal["individual", "group"]
+    group_name: Optional[str] = None
+
+
+class ParticipantPlan(BaseModel):
+    """Participant-safe view of the currently published shift plan."""
+
+    is_released: bool
+    assignments: List[ParticipantAssignment] = Field(default_factory=list)
+
 
 class ShiftUser(ShiftUserBase):
     """Schema for returning shift-user assignment"""

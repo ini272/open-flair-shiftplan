@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box,
-  CircularProgress, Button, Stack
+  Button, Stack
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
@@ -10,8 +10,8 @@ import { translations } from '../utils/translations';
 
 // Enhanced styled component for shift cells with more pronounced visual feedback
 const ShiftCell = styled(Box, {
-  shouldForwardProp: (prop) => !['isPending', 'selected', 'blocked'].includes(prop)
-})(({ theme, selected, isPending, blocked }) => ({
+  shouldForwardProp: (prop) => !['selected', 'blocked'].includes(prop)
+})(({ theme, selected, blocked }) => ({
   padding: theme.spacing(1, 1.1),
   borderRadius: theme.shape.borderRadius,
   backgroundColor: blocked
@@ -20,14 +20,14 @@ const ShiftCell = styled(Box, {
   color: blocked
     ? theme.palette.text.secondary
     : (selected ? theme.palette.success.contrastText : theme.palette.error.contrastText),
-  cursor: blocked ? 'not-allowed' : (isPending ? 'wait' : 'pointer'),
+  cursor: blocked ? 'not-allowed' : 'pointer',
   transition: 'background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
   boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
   '&:hover': {
     boxShadow: blocked
       ? '0 1px 3px rgba(0,0,0,0.12)'
       : '0 4px 8px rgba(0,0,0,0.2)',
-    transform: blocked || isPending ? 'none' : 'translateY(-2px)',
+    transform: blocked ? 'none' : 'translateY(-2px)',
   },
   display: 'flex',
   justifyContent: 'space-between',
@@ -62,9 +62,7 @@ const ShiftGrid = ({
   shifts, 
   userPreferences, 
   blockedShiftIds = [],
-  pendingOperations = {},
-  onBatchDayToggle, // New prop for batch operations
-  batchPendingDays = {} // New prop to track which days are being batch processed
+  onBatchDayToggle,
 }) => {
   // Create a lookup object for user preferences for O(1) lookups
   const preferenceMap = useMemo(() => {
@@ -74,11 +72,6 @@ const ShiftGrid = ({
     });
     return map;
   }, [userPreferences]);
-
-  // Create a lookup object for pending operations for O(1) lookups
-  const pendingMap = useMemo(() => {
-    return { ...pendingOperations };
-  }, [pendingOperations]);
 
   const blockedShiftIdSet = useMemo(() => new Set(blockedShiftIds), [blockedShiftIds]);
 
@@ -146,11 +139,6 @@ const ShiftGrid = ({
     return preferenceMap[shiftId] === true;
   }, [preferenceMap]);
 
-  // Check if a shift has a pending operation - use the pending map for O(1) lookup
-  const isShiftPending = useCallback((shiftId) => {
-    return pendingMap[shiftId] !== undefined;
-  }, [pendingMap]);
-
   const isShiftBlocked = useCallback((shiftId) => {
     return blockedShiftIdSet.has(shiftId);
   }, [blockedShiftIdSet]);
@@ -172,10 +160,6 @@ const ShiftGrid = ({
       return;
     }
 
-    if (slotShifts.some(shift => isShiftPending(shift.id))) {
-      return;
-    }
-
     const selectionStatus = getSlotSelectionStatus(slotShifts);
     if (selectionStatus === 'blocked') {
       return;
@@ -183,7 +167,7 @@ const ShiftGrid = ({
     const shouldSelect = selectionStatus === 'none';
 
     onBatchDayToggle(slotShifts, shouldSelect);
-  }, [getSlotSelectionStatus, isShiftPending, onBatchDayToggle]);
+  }, [getSlotSelectionStatus, onBatchDayToggle]);
 
   // Get day selection status for batch button styling
   const getDaySelectionStatus = useCallback((day) => {
@@ -225,7 +209,6 @@ const ShiftGrid = ({
             </TableCell>
             {days.map(day => {
               const selectionStatus = getDaySelectionStatus(day);
-              const isDayPending = batchPendingDays[day];
               const dayShifts = shiftsByDay[day] || [];
               const hasActionableShifts = dayShifts.some((shift) => !isShiftBlocked(shift.id));
               
@@ -239,7 +222,6 @@ const ShiftGrid = ({
                         variant={selectionStatus === 'all' ? 'contained' : 'outlined'}
                         color={selectionStatus === 'partial' ? 'warning' : 'primary'}
                         onClick={() => handleBatchDayToggle(day)}
-                        disabled={isDayPending}
                         sx={{ 
                           minWidth: 'auto', 
                           px: 1, 
@@ -247,11 +229,7 @@ const ShiftGrid = ({
                           textTransform: 'none'
                         }}
                       >
-                        {isDayPending ? (
-                          <CircularProgress size={12} />
-                        ) : (
-                          selectionStatus === 'all' ? 'Alle abwählen' : 'Alle auswählen'
-                        )}
+                        {selectionStatus === 'all' ? 'Alle abwählen' : 'Alle auswählen'}
                       </Button>
                     )}
                   </Stack>
@@ -269,7 +247,6 @@ const ShiftGrid = ({
                 const selectionStatus = getSlotSelectionStatus(cellShifts);
                 const available = selectionStatus === 'all';
                 const blocked = selectionStatus === 'blocked';
-                const isPending = cellShifts.some(shift => isShiftPending(shift.id));
                 
                 return (
                   <TableCell key={`${day}-${timeSlot}`} align="center" sx={{ padding: 1 }}>
@@ -277,7 +254,6 @@ const ShiftGrid = ({
                       <ShiftCell
                         selected={available}
                         blocked={blocked}
-                        isPending={isPending}
                         onClick={() => handleSlotClick(cellShifts)}
                       >
                         <Box

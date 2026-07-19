@@ -263,7 +263,8 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         db: Session, 
         *, 
         shift_id: int,
-        user_id: int
+        user_id: int,
+        commit: bool = True,
     ) -> Optional[Shift]:
         """
         Opt a user out of a shift.
@@ -310,8 +311,11 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
                 if existing is None:
                     db.execute(stmt)
 
-        db.commit()
-        db.refresh(shift)
+        if commit:
+            db.commit()
+            db.refresh(shift)
+        else:
+            db.flush()
         return shift
 
     def opt_in_user(
@@ -319,7 +323,8 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         db: Session, 
         *, 
         shift_id: int,
-        user_id: int
+        user_id: int,
+        commit: bool = True,
     ) -> Optional[Shift]:
         """
         Opt a user back into a shift.
@@ -354,8 +359,11 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
                 )
             )
 
-        db.commit()
-        db.refresh(shift)
+        if commit:
+            db.commit()
+            db.refresh(shift)
+        else:
+            db.flush()
         return shift
 
     def opt_out_group(
@@ -363,7 +371,8 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         db: Session, 
         *, 
         shift_id: int,
-        group_id: int
+        group_id: int,
+        commit: bool = True,
     ) -> Optional[Shift]:
         """
         Opt a group out of a shift.
@@ -406,8 +415,11 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
                 if existing is None:
                     db.execute(stmt)
 
-        db.commit()
-        db.refresh(shift)
+        if commit:
+            db.commit()
+            db.refresh(shift)
+        else:
+            db.flush()
         return shift
 
     def opt_in_group(
@@ -415,7 +427,8 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         db: Session, 
         *, 
         shift_id: int,
-        group_id: int
+        group_id: int,
+        commit: bool = True,
     ) -> Optional[Shift]:
         """
         Opt a group back into a shift.
@@ -446,8 +459,11 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
                 )
             )
 
-        db.commit()
-        db.refresh(shift)
+        if commit:
+            db.commit()
+            db.refresh(shift)
+        else:
+            db.flush()
         return shift
 
     def is_user_opted_out(

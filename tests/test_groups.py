@@ -173,9 +173,9 @@ def test_remove_user_not_in_group(participant_client):
     assert response.status_code == 400
 
 
-def test_under_16_users_cannot_join_groups(participant_client):
-    """Under-16 accounts must stay out of groups."""
-    user_response = participant_client.post(
+def test_groups_must_not_mix_under_16_and_adult_members(participant_client):
+    """Groups may contain only under-16 or only adult participants."""
+    under_16_response = participant_client.post(
         "/users/",
         json={
             "email": "under16-group@example.com",
@@ -183,14 +183,54 @@ def test_under_16_users_cannot_join_groups(participant_client):
             "is_under_16": True,
         }
     )
-    user_id = user_response.json()["id"]
+    under_16_id = under_16_response.json()["id"]
 
     group_response = participant_client.post(
         "/groups/",
-        json={"name": "Blocked Group"}
+        json={"name": "U16 Group"}
     )
     group_id = group_response.json()["id"]
 
-    response = participant_client.post(f"/groups/{group_id}/users/{user_id}")
+    first_join_response = participant_client.post(f"/groups/{group_id}/users/{under_16_id}")
+    assert first_join_response.status_code == 200
+
+    second_under_16_response = participant_client.post(
+        "/users/",
+        json={
+            "email": "under16-group-second@example.com",
+            "username": "under16groupsecond",
+            "is_under_16": True,
+        }
+    )
+    second_under_16_id = second_under_16_response.json()["id"]
+
+    second_join_response = participant_client.post(
+        f"/groups/{group_id}/users/{second_under_16_id}"
+    )
+    assert second_join_response.status_code == 200
+
+    adult_response = participant_client.post(
+        "/users/",
+        json={"email": "adult-group@example.com", "username": "adultgroup"},
+    )
+    adult_id = adult_response.json()["id"]
+
+    response = participant_client.post(f"/groups/{group_id}/users/{adult_id}")
     assert response.status_code == 400
-    assert response.json()["detail"] == "Users under 16 cannot join groups"
+    assert response.json()["detail"] == "Groups must not mix under-16 and adult members"
+
+    adult_group_response = participant_client.post(
+        "/groups/",
+        json={"name": "Adult Group"},
+    )
+    adult_group_id = adult_group_response.json()["id"]
+    adult_join_response = participant_client.post(f"/groups/{adult_group_id}/users/{adult_id}")
+    assert adult_join_response.status_code == 200
+
+    participant_client.post(
+        "/users/lookup",
+        json={"email": "under16-group@example.com"},
+    )
+    response = participant_client.post(f"/groups/{adult_group_id}/users/{under_16_id}")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Groups must not mix under-16 and adult members"
