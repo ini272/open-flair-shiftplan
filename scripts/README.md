@@ -9,8 +9,8 @@ cd /srv/open-flair-shiftplan
 ./scripts/backup_production.sh
 ```
 
-The script uses SQLite's online backup API, so it also includes data that is
-currently in SQLite's WAL journal. It creates three private files in
+The script uses SQLite's online backup API to create a consistent snapshot
+while the app is running. It creates three private files in
 `backups/`: the database snapshot, the matching `.env`, and a manifest with
 checksums, Git commit, and the successful integrity check.
 
@@ -31,8 +31,8 @@ For an actual restore after a failed deploy or import:
 
 The script verifies the manifest checksums, rehearses the selected snapshot,
 creates a final rescue backup of the current state, then stops and starts the
-production stack. The previous database and SQLite WAL files are moved to
-`data/pre-restore-.../` rather than deleted. Run the smoke test afterwards.
+production stack. The previous database is moved to `data/pre-restore-.../`
+rather than deleted. Run the smoke test afterwards.
 
 ## Local Recovery Rehearsal
 `docker-compose.restore-test.yml` starts only a production-configured FastAPI

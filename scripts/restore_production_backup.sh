@@ -99,7 +99,7 @@ if not os.path.isfile(backup_database):
     raise RuntimeError(f"Backup is not mounted in the helper container: {backup_database}")
 
 os.makedirs(staging_directory, mode=0o700, exist_ok=False)
-for filename in ("sql_app.db", "sql_app.db-wal", "sql_app.db-shm"):
+for filename in ("sql_app.db",):
     source = os.path.join(data_directory, filename)
     if os.path.exists(source):
         shutil.move(source, os.path.join(staging_directory, filename))

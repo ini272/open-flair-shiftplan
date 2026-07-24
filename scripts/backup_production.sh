@@ -46,7 +46,7 @@ trap cleanup EXIT
 
 printf 'Erstelle SQLite-Snapshot: %s\n' "$database_backup"
 
-# sqlite3.Connection.backup includes pending WAL data and is safe during writes.
+# sqlite3.Connection.backup creates a consistent snapshot while the app is writing.
 python3 - "$DATABASE_PATH" "$temporary_database_backup" <<'PY'
 import sqlite3
 import sys

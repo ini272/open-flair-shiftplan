@@ -31,9 +31,10 @@ cd /srv/open-flair-shiftplan
 ./scripts/backup_production.sh
 ```
 
-Das Skript verwendet die SQLite-Backup-API statt eines einfachen `cp`. Damit
-enthaelt der Snapshot auch Daten aus einem eventuell aktiven WAL-Journal. Es
-legt in `backups/` jeweils drei private Dateien mit demselben Zeitstempel ab:
+Das Skript verwendet die SQLite-Backup-API statt eines einfachen `cp` und
+erstellt damit auch waehrend des laufenden Betriebs einen konsistenten
+Snapshot. Es legt in `backups/` jeweils drei private Dateien mit demselben
+Zeitstempel ab:
 
 - Datenbank-Snapshot
 - passende `.env`
@@ -148,9 +149,9 @@ cd /srv/open-flair-shiftplan
 
 Immer die `.db` und `.env` mit demselben Zeitstempel verwenden. Vor dem
 eigentlichen Restore prueft das Skript die Pruefsummen und erzeugt ein neues
-Rettungs-Backup des aktuellen Stands. Die bisherige Datenbank sowie moegliche
-SQLite-WAL-Dateien werden in `data/pre-restore-.../` verschoben und nicht
-geloescht. Erst nach dem Smoke-Test kann dieser Ordner entfernt werden.
+Rettungs-Backup des aktuellen Stands. Die bisherige Datenbank wird in
+`data/pre-restore-.../` verschoben und nicht geloescht. Erst nach dem
+Smoke-Test kann dieser Ordner entfernt werden.
 
 Danach kurz pruefen:
 
