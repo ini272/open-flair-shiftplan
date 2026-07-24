@@ -28,15 +28,35 @@ Vor jedem Deploy, Datenimport oder groesseren Eingriff:
 
 ```bash
 cd /srv/open-flair-shiftplan
-ts=$(date +%Y%m%d-%H%M%S)
-cp data/sql_app.db "data/sql_app.db.backup-$ts"
-cp .env ".env.backup-$ts"
+./scripts/backup_production.sh
 ```
+
+Das Skript verwendet die SQLite-Backup-API statt eines einfachen `cp` und
+erstellt damit auch waehrend des laufenden Betriebs einen konsistenten
+Snapshot. Es legt in `backups/` jeweils drei private Dateien mit demselben
+Zeitstempel ab:
+
+- Datenbank-Snapshot
+- passende `.env`
+- Manifest mit Commit, SHA-256-Pruefsummen und Integritaetscheck
+
+### Wiederherstellung vorher ueben
+
+Nach dem ersten Backup und bevor echte Teilnehmerdaten vorhanden sind:
+
+```bash
+./scripts/rehearse_production_restore.sh backups/open-flair-YYYYMMDDTHHMMSSZ.db
+```
+
+Die Probe stellt nur in einem temporaeren Verzeichnis wieder her, prueft die
+Datenbank und aendert die Live-Datenbank nicht. Die ausgegebenen Nutzer-,
+Gruppen- und Schichtzahlen sollten plausibel sein.
 
 Zusaetzlich sinnvoll:
 
 - den Backup-Ordner gelegentlich vom Server herunterladen
-- mindestens taeglich ein DB-Backup behalten, solange das Event laeuft
+- mindestens taeglich ein Backup behalten, solange das Event laeuft
+- mindestens eine Kopie ausserhalb des Servers ablegen
 
 ## Deploy
 
@@ -124,11 +144,14 @@ Wenn ein Deploy oder Import schiefgeht:
 
 ```bash
 cd /srv/open-flair-shiftplan
-docker compose -f docker-compose.prod.yml down
-cp data/sql_app.db.backup-YYYYMMDD-HHMMSS data/sql_app.db
-cp .env.backup-YYYYMMDD-HHMMSS .env
-docker compose -f docker-compose.prod.yml up -d
+./scripts/restore_production_backup.sh backups/open-flair-YYYYMMDDTHHMMSSZ.db --confirm
 ```
+
+Immer die `.db` und `.env` mit demselben Zeitstempel verwenden. Vor dem
+eigentlichen Restore prueft das Skript die Pruefsummen und erzeugt ein neues
+Rettungs-Backup des aktuellen Stands. Die bisherige Datenbank wird in
+`data/pre-restore-.../` verschoben und nicht geloescht. Erst nach dem
+Smoke-Test kann dieser Ordner entfernt werden.
 
 Danach kurz pruefen:
 
