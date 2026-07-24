@@ -1,0 +1,17 @@
+# Local-only recovery rehearsal. It deliberately omits Caddy and the frontend.
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/sql_app.db
+      - NODE_ENV=production
+      - EVENT_CODE=local-recovery-event-code
+      - COORDINATOR_CODE=local-recovery-coordinator-code
+      - SESSION_SECRET_KEY=local-recovery-session-secret-not-for-production
+      - COOKIE_SECURE=false
