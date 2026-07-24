@@ -21,6 +21,7 @@ const ParticipantAssignments = ({
   selectedViewOption,
   optedOutShifts,
 }) => {
+  const optedOutShiftRecords = optedOutShifts.map((id) => ({ id }));
 
   if (isLoading) {
     return (
@@ -76,10 +77,10 @@ const ParticipantAssignments = ({
         selectedViewOption={selectedViewOption}
         generatedAssignments={plan.assignments}
         userOptOuts={selectedViewOption?.type === 'user'
-          ? { [selectedViewOption.id]: optedOutShifts }
+          ? { [selectedViewOption.id]: optedOutShiftRecords }
           : {}}
         groupOptOuts={selectedViewOption?.type === 'group'
-          ? { [selectedViewOption.id]: optedOutShifts }
+          ? { [selectedViewOption.id]: optedOutShiftRecords }
           : {}}
         loadingSelectionContext={false}
         assignmentsAreScopedToSelectedView

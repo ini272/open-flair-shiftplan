@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   Box,
+  Chip,
   CircularProgress,
   Paper,
   Stack,
@@ -94,6 +95,16 @@ const getCompactShiftLabel = (title) => {
   }
 
   return title;
+};
+
+const getLocationPreferenceLabel = (preference) => {
+  const labels = {
+    both: translations.shifts.locationPreferenceBoth,
+    weinzelt: translations.shifts.locationPreferenceWeinzelt,
+    bierwagen: translations.shifts.locationPreferenceBierwagen,
+  };
+
+  return labels[preference] || labels.both;
 };
 
 const CoordinatorPersonView = ({
@@ -210,8 +221,20 @@ const CoordinatorPersonView = ({
   }
 
   return (
-    <TableContainer component={Paper} sx={{ overflowX: 'auto', borderRadius: 2.5 }}>
-      <Table sx={{ minWidth: 980 }}>
+    <Stack spacing={1.25}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.25 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+          {translations.shifts.locationPreferenceTitle}
+        </Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          label={getLocationPreferenceLabel(selectedViewOption.locationPreference)}
+        />
+      </Stack>
+
+      <TableContainer component={Paper} sx={{ overflowX: 'auto', borderRadius: 2.5 }}>
+        <Table sx={{ minWidth: 980 }}>
         <TableHead>
           <TableRow>
             <TableCell sx={{ width: 150, backgroundColor: '#f5f5f5', fontWeight: 700 }}>
@@ -318,8 +341,9 @@ const CoordinatorPersonView = ({
             </TableRow>
           ))}
         </TableBody>
-      </Table>
-    </TableContainer>
+        </Table>
+      </TableContainer>
+    </Stack>
   );
 };
 

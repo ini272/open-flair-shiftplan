@@ -294,6 +294,7 @@ const CoordinatorView = ({ shifts, users }) => {
         type: 'user',
         label: user.username,
         isUnder16: Boolean(user.is_under_16),
+        locationPreference: user.location_preference || 'both',
         shiftCount: assignmentStats.userShiftCounts.get(user.id) || 0,
       }));
 
@@ -305,6 +306,7 @@ const CoordinatorView = ({ shifts, users }) => {
         type: 'group',
         label: group.name,
         name: group.name,
+        locationPreference: group.location_preference || 'both',
         shiftCount: assignmentStats.groupShiftCounts.get(group.name)?.size || 0,
       }));
 

@@ -91,8 +91,10 @@ const DashboardPage = () => {
         const allShiftsResponse = await shiftService.getShifts();
         setShifts(allShiftsResponse.data);
         
-        // Get user's opted-out shifts
-        const optOutsResponse = await shiftService.getUserOptOuts(userId);
+        // Group availability is shared, so members must load the group's opt-outs.
+        const optOutsResponse = userResponse.data.group_id
+          ? await shiftService.getGroupOptOuts(userResponse.data.group_id)
+          : await shiftService.getUserOptOuts(userId);
         const optOutShiftIds = optOutsResponse.data.map((shift) => shift.id);
         setOptedOutShifts(optOutShiftIds);
         setSavedOptedOutShifts(optOutShiftIds);
@@ -211,6 +213,7 @@ const DashboardPage = () => {
         id: user.group_id,
         type: 'group',
         label: userGroup?.name || 'Mein Team',
+        locationPreference: userGroup?.location_preference || 'both',
       };
     }
 
@@ -219,6 +222,7 @@ const DashboardPage = () => {
       type: 'user',
       label: user.username,
       isUnder16: Boolean(user.is_under_16),
+      locationPreference: user.location_preference || 'both',
     };
   }, [user, userGroup]);
 
