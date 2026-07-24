@@ -34,6 +34,19 @@ creates a final rescue backup of the current state, then stops and starts the
 production stack. The previous database is moved to `data/pre-restore-.../`
 rather than deleted. Run the smoke test afterwards.
 
+## Full Data Reset
+For a test before inviting participants, reset every app record while keeping a
+rescue backup and the previous database:
+
+```bash
+./scripts/wipe_production_data.sh --confirm
+```
+
+This removes all users, groups, shifts, assignments, availabilities, and plan
+settings from the active database. It leaves `.env` and `backups/` untouched.
+The previous database is moved to `data/pre-wipe-.../`; restore the rescue
+backup with `restore_production_backup.sh` to return to the former state.
+
 ## Local Recovery Rehearsal
 `docker-compose.restore-test.yml` starts only a production-configured FastAPI
 container on `127.0.0.1:8000`; it does not contact the public domain. Use it
@@ -44,26 +57,26 @@ restore script locally.
 Use `create_production_shifts.py` to create the actual festival shifts from the YAML configuration:
 
 ```bash
-python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE
+uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE
 ```
 
 Or specify a custom YAML file:
 ```bash
-python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE --schedule path/to/custom_schedule.yaml
+uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE --schedule path/to/custom_schedule.yaml
 ```
 
 ## Test Shifts
 Use `create_test_shifts.py` to create random test shifts for development:
 
 ```bash
-COORDINATOR_CODE=YOUR_COORDINATOR_CODE python scripts/create_test_shifts.py
+COORDINATOR_CODE=YOUR_COORDINATOR_CODE uv run --with-requirements requirements.txt python scripts/create_test_shifts.py
 ```
 
 ## Demo Profiles
 Use `seed_demo_profiles.py` to create deterministic demo users and a demo group with different availability patterns:
 
 ```bash
-python scripts/seed_demo_profiles.py --api-url http://localhost:8000
+uv run --with-requirements requirements.txt python scripts/seed_demo_profiles.py --api-url http://localhost:8000
 ```
 
 This script assumes shifts already exist and uses the normal access-code login flow.

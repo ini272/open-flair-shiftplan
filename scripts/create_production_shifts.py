@@ -144,10 +144,10 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python create_production_shifts.py --access-code zelt-plan-regen-48
-  python create_production_shifts.py --access-code zelt-plan-regen-48 --clear-existing
-  python create_production_shifts.py --access-code zelt-plan-regen-48 --schedule custom_schedule.yaml
-  python create_production_shifts.py --access-code zelt-plan-regen-48 --api-url http://localhost:8001
+  uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code zelt-plan-regen-48
+  uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code zelt-plan-regen-48 --clear-existing
+  uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code zelt-plan-regen-48 --schedule custom_schedule.yaml
+  uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code zelt-plan-regen-48 --api-url http://localhost:8001
         """
     )
     
