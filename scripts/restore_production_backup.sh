@@ -105,7 +105,6 @@ for filename in ("sql_app.db",):
         shutil.move(source, os.path.join(staging_directory, filename))
 
 shutil.copyfile(backup_database, os.path.join(data_directory, "sql_app.db"))
-os.chmod(os.path.join(data_directory, "sql_app.db"), 0o600)
 PY
 
 cp -- "$backup_environment" "$PROJECT_DIR/.env"
