@@ -46,7 +46,9 @@ backup_manifest="$backup_prefix.txt"
 [[ -f "$backup_manifest" ]] || fail "Passendes Manifest nicht gefunden: $backup_manifest"
 
 case "$backup_database" in
-  "$PROJECT_DIR"/backups/*) ;;
+  "$PROJECT_DIR"/backups/*)
+    backup_relative_path="${backup_database#"$PROJECT_DIR/backups/"}"
+    ;;
   *) fail "Backup-Datei muss innerhalb von $PROJECT_DIR/backups liegen" ;;
 esac
 
@@ -77,7 +79,6 @@ BACKUP_DIR="$PROJECT_DIR/backups/pre-restore" "$SCRIPT_DIR/backup_production.sh"
 
 restore_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 staging_directory="$PROJECT_DIR/data/pre-restore-$restore_timestamp"
-backup_database_name="$(basename "$backup_database")"
 
 printf 'Stoppe Produktions-Stack.\n'
 docker compose -f "$COMPOSE_FILE" down
@@ -85,15 +86,18 @@ docker compose -f "$COMPOSE_FILE" down
 # The helper runs as the container user, which can safely handle Docker-owned data/ files.
 docker compose -f "$COMPOSE_FILE" run --rm --no-deps -T \
   -v "$PROJECT_DIR/backups:/app/backups" \
-  fastapi python - "$backup_database_name" "$(basename "$staging_directory")" <<'PY'
+  fastapi python - "$backup_relative_path" "$(basename "$staging_directory")" <<'PY'
 import os
 import shutil
 import sys
 
-backup_name, staging_name = sys.argv[1:]
+backup_relative_path, staging_name = sys.argv[1:]
 data_directory = "/app/data"
-backup_database = os.path.join("/app/backups", backup_name)
+backup_database = os.path.normpath(os.path.join("/app/backups", backup_relative_path))
 staging_directory = os.path.join(data_directory, staging_name)
+
+if not backup_database.startswith("/app/backups/"):
+    raise RuntimeError("Backup path escapes the mounted backups directory")
 
 if not os.path.isfile(backup_database):
     raise RuntimeError(f"Backup is not mounted in the helper container: {backup_database}")

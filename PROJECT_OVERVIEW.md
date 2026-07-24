@@ -61,7 +61,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 # Backend tests without Docker
 uv venv
 uv pip install -r requirements.txt
-uv run python -m pytest
+uv run --with-requirements requirements.txt python -m pytest
 ```
 
 ## Shift Data
@@ -69,7 +69,7 @@ uv run python -m pytest
 Create production-shaped shifts from the YAML schedule:
 
 ```bash
-python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE
+uv run --with-requirements requirements.txt python scripts/create_production_shifts.py --access-code YOUR_COORDINATOR_CODE
 ```
 
 The default schedule is stored in `scripts/festival_schedule.yaml`.

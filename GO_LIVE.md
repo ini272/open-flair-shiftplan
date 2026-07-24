@@ -102,7 +102,7 @@ Wenn der Server leer ist und Demo-Daten benoetigt werden:
 
 ```bash
 cd /srv/open-flair-shiftplan
-uv run python scripts/seed_demo_roster.py \
+uv run --with-requirements requirements.txt python scripts/seed_demo_roster.py \
   --roster demo_liste.txt \
   --api-url https://of-weinzelt-schichtplan.ini272.de \
   --participant-access-code "$EVENT_CODE" \
@@ -113,7 +113,7 @@ uv run python scripts/seed_demo_roster.py \
 
 ```bash
 cd /srv/open-flair-shiftplan
-uv run python scripts/create_production_shifts.py \
+uv run --with-requirements requirements.txt python scripts/create_production_shifts.py \
   --access-code "$COORDINATOR_CODE" \
   --api-url https://of-weinzelt-schichtplan.ini272.de
 ```
@@ -159,6 +159,21 @@ Danach kurz pruefen:
 docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs --tail=100
 ```
+
+## Voll-Reset fuer Tests
+
+Nur vor dem Versand der Einladungen verwenden:
+
+```bash
+cd /srv/open-flair-shiftplan
+./scripts/wipe_production_data.sh --confirm
+```
+
+Das Skript erstellt zuerst ein Rettungs-Backup und startet danach mit einer
+leeren Datenbank. Damit werden alle Nutzer, Gruppen, Schichten, Zuteilungen,
+Verfuegbarkeiten und Planeinstellungen entfernt. `.env` und `backups/` bleiben
+erhalten; die bisherige Datenbank wird nach `data/pre-wipe-.../` verschoben.
+Bei Bedarf stellt `restore_production_backup.sh` das Rettungs-Backup wieder her.
 
 ## Nach dem Event
 
