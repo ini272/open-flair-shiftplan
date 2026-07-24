@@ -222,7 +222,12 @@ const CoordinatorPersonView = ({
 
   return (
     <Stack spacing={1.25}>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.25 }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        sx={{ px: 0.25, flexWrap: 'wrap', rowGap: 0.5 }}
+      >
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
           {translations.shifts.locationPreferenceTitle}
         </Typography>
@@ -231,6 +236,11 @@ const CoordinatorPersonView = ({
           variant="outlined"
           label={getLocationPreferenceLabel(selectedViewOption.locationPreference)}
         />
+        {selectedViewOption.type === 'group' && selectedViewOption.memberNames?.length > 0 && (
+          <Typography variant="caption" color="text.secondary">
+            {translations.coordinator.teamMembers}: {selectedViewOption.memberNames.join(', ')}
+          </Typography>
+        )}
       </Stack>
 
       <TableContainer component={Paper} sx={{ overflowX: 'auto', borderRadius: 2.5 }}>

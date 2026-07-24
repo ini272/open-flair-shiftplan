@@ -307,6 +307,7 @@ const CoordinatorView = ({ shifts, users }) => {
         label: group.name,
         name: group.name,
         locationPreference: group.location_preference || 'both',
+        memberNames: group.users.map((user) => user.username),
         shiftCount: assignmentStats.groupShiftCounts.get(group.name)?.size || 0,
       }));
 

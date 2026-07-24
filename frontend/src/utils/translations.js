@@ -239,6 +239,7 @@ export const translations = {
     noMatchingPeople: 'Keine passenden Personen oder Teams gefunden.',
     peopleLabel: 'Mitarbeitende',
     teamsLabel: 'Teams',
+    teamMembers: 'Im Team',
     assignedCountSuffix: 'Schichten',
     noAssignmentsShort: 'Keine',
     userAvailable: 'Verfügbar',
