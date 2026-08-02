@@ -600,6 +600,14 @@ def add_user_to_shift(
                 detail="Coordinator accounts cannot be assigned to shifts",
             )
 
+        if not user.is_active:
+            span.add_event("inactive_user_assignment_blocked", {"user_id": assignment.user_id})
+            span.set_attribute("error", "Inactive users cannot be assigned to shifts")
+            raise HTTPException(
+                status_code=400,
+                detail="Inactive users cannot be assigned to shifts",
+            )
+
         if user.is_under_16 and is_under_16_restricted_shift(shift):
             span.add_event("under_16_evening_assignment_blocked", {"user_id": assignment.user_id})
             span.set_attribute("error", "Users under 16 cannot be assigned to shifts from 20:00 onward")
@@ -618,6 +626,18 @@ def add_user_to_shift(
             raise HTTPException(
                 status_code=400,
                 detail="User is not available for this shift",
+            )
+
+        if shift_crud.is_user_assigned_to_overlapping_shift(
+            db,
+            shift_id=assignment.shift_id,
+            user_id=assignment.user_id,
+        ):
+            span.add_event("overlapping_user_assignment_blocked", {"user_id": assignment.user_id})
+            span.set_attribute("error", "User is already assigned to an overlapping shift")
+            raise HTTPException(
+                status_code=400,
+                detail="User is already assigned to an overlapping shift",
             )
 
         # Check capacity
@@ -692,6 +712,14 @@ def add_group_to_shift(
                 detail="Groups with coordinator accounts cannot be assigned to shifts",
             )
 
+        if not group.is_active or not group.users or any(not user.is_active for user in group.users):
+            span.add_event("inactive_group_assignment_blocked", {"group_id": assignment.group_id})
+            span.set_attribute("error", "Only active groups with active members can be assigned to shifts")
+            raise HTTPException(
+                status_code=400,
+                detail="Only active groups with active members can be assigned to shifts",
+            )
+
         if is_under_16_restricted_shift(shift) and any(user.is_under_16 for user in group.users):
             span.add_event("under_16_group_evening_assignment_blocked", {"group_id": assignment.group_id})
             span.set_attribute("error", "Groups with users under 16 cannot be assigned to shifts from 20:00 onward")
@@ -713,6 +741,21 @@ def add_group_to_shift(
             raise HTTPException(
                 status_code=400,
                 detail="Group is not available for this shift",
+            )
+
+        if any(
+            shift_crud.is_user_assigned_to_overlapping_shift(
+                db,
+                shift_id=assignment.shift_id,
+                user_id=user.id,
+            )
+            for user in group.users
+        ):
+            span.add_event("overlapping_group_assignment_blocked", {"group_id": assignment.group_id})
+            span.set_attribute("error", "Group already has members assigned to an overlapping shift")
+            raise HTTPException(
+                status_code=400,
+                detail="Group already has members assigned to an overlapping shift",
             )
 
         # Add group to shift (this will check capacity)

@@ -102,6 +102,28 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
             Shift.start_time == shift.start_time,
             Shift.end_time == shift.end_time,
         ).all()
+
+    def is_user_assigned_to_overlapping_shift(
+        self,
+        db: Session,
+        *,
+        shift_id: int,
+        user_id: int,
+    ) -> bool:
+        """Return whether a user already works in another overlapping shift."""
+        shift = self.get(db, id=shift_id)
+        if not shift:
+            return False
+
+        return db.query(Shift.id).join(
+            shift_users, Shift.id == shift_users.c.shift_id
+        ).filter(
+            Shift.id != shift_id,
+            Shift.is_active == True,
+            Shift.start_time < shift.end_time,
+            Shift.end_time > shift.start_time,
+            shift_users.c.user_id == user_id,
+        ).first() is not None
     
     def add_user_to_shift(
         self, 
@@ -514,7 +536,7 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
         user_id: int
     ) -> bool:
         """
-        Return True if a user is available for any shift in the same day/timeslot.
+        Return True if a user is available for the whole day/timeslot.
 
         Slot-level opt-outs are mirrored across parallel shifts, so this remains
         aligned with the UI semantics of "not possible for this whole slot".
@@ -525,7 +547,7 @@ class CRUDShift(CRUDBase[Shift, ShiftCreate, ShiftUpdate]):
 
         same_slot_shifts = self.get_same_slot_shifts(db, shift_id=shift_id)
 
-        return any(
+        return all(
             not self.is_user_opted_out(db, shift_id=parallel_shift.id, user_id=user_id)
             for parallel_shift in same_slot_shifts
         )

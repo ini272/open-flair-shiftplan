@@ -458,6 +458,16 @@ def test_clear_all_assignments(authenticated_client):
         json={"name": "Clear Test Group"}
     )
     group_id = group_response.json()["id"]
+
+    group_user_id = create_participant_user(
+        authenticated_client,
+        "clear-group-member@example.com",
+        "cleargroupmember",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+    assert authenticated_client.post(
+        f"/groups/{group_id}/users/{group_user_id}"
+    ).status_code == 200
     
     # Create a shift
     start_time = datetime.utcnow() + timedelta(hours=1)

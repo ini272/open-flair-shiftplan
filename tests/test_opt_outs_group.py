@@ -348,25 +348,87 @@ def test_unavailable_group_cannot_be_manually_assigned(authenticated_client):
 
     start_time = datetime.utcnow() + timedelta(hours=1)
     end_time = start_time + timedelta(hours=2)
-    shift_response = authenticated_client.post(
+    first_shift_response = authenticated_client.post(
         "/shifts/",
         json={
-            "title": "Manual Unavailable Group Shift",
+            "title": "Manual Unavailable Group First Location",
             "start_time": start_time.isoformat(),
             "end_time": end_time.isoformat(),
             "capacity": 3,
         },
     )
-    shift_id = shift_response.json()["id"]
+    second_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Unavailable Group Second Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    first_shift_id = first_shift_response.json()["id"]
+    second_shift_id = second_shift_response.json()["id"]
 
     assert authenticated_client.post(
         "/shifts/group-opt-out",
-        json={"group_id": group_id, "shift_id": shift_id},
+        json={"group_id": group_id, "shift_id": first_shift_id},
     ).status_code == 200
 
     response = authenticated_client.post(
         "/shifts/groups/",
-        json={"group_id": group_id, "shift_id": shift_id},
+        json={"group_id": group_id, "shift_id": second_shift_id},
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Group is not available for this shift"
+
+
+def test_group_cannot_be_manually_assigned_to_overlapping_shift(authenticated_client):
+    """Manual assignments must not schedule a group at two locations at once."""
+    group_response = authenticated_client.post(
+        "/groups/",
+        json={"name": "Manual Overlap Group"},
+    )
+    group_id = group_response.json()["id"]
+
+    user_id = create_participant_user(
+        authenticated_client,
+        "manual-overlap-group@example.com",
+        "manualoverlapgroup",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user_id}").status_code == 200
+
+    start_time = datetime.utcnow() + timedelta(hours=1)
+    end_time = start_time + timedelta(hours=2)
+    first_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Group Overlap First Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    second_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Group Overlap Second Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    first_shift_id = first_shift_response.json()["id"]
+    second_shift_id = second_shift_response.json()["id"]
+
+    assert authenticated_client.post(
+        "/shifts/groups/",
+        json={"group_id": group_id, "shift_id": first_shift_id},
+    ).status_code == 200
+
+    response = authenticated_client.post(
+        "/shifts/groups/",
+        json={"group_id": group_id, "shift_id": second_shift_id},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Group already has members assigned to an overlapping shift"

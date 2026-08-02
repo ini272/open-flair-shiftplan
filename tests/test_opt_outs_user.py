@@ -235,25 +235,80 @@ def test_unavailable_user_cannot_be_manually_assigned(authenticated_client):
 
     start_time = datetime.utcnow() + timedelta(hours=1)
     end_time = start_time + timedelta(hours=2)
-    shift_response = authenticated_client.post(
+    first_shift_response = authenticated_client.post(
         "/shifts/",
         json={
-            "title": "Manual Unavailable User Shift",
+            "title": "Manual Unavailable User First Location",
             "start_time": start_time.isoformat(),
             "end_time": end_time.isoformat(),
             "capacity": 3,
         },
     )
-    shift_id = shift_response.json()["id"]
+    second_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Unavailable User Second Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    first_shift_id = first_shift_response.json()["id"]
+    second_shift_id = second_shift_response.json()["id"]
 
     assert authenticated_client.post(
         "/shifts/user-opt-out",
-        json={"user_id": user_id, "shift_id": shift_id},
+        json={"user_id": user_id, "shift_id": first_shift_id},
     ).status_code == 200
 
     response = authenticated_client.post(
         "/shifts/users/",
-        json={"user_id": user_id, "shift_id": shift_id},
+        json={"user_id": user_id, "shift_id": second_shift_id},
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "User is not available for this shift"
+
+
+def test_user_cannot_be_manually_assigned_to_overlapping_shift(authenticated_client):
+    """Manual assignments must not schedule a person at two locations at once."""
+    user_id = create_participant_user(
+        authenticated_client,
+        "manual-overlap-user@example.com",
+        "manualoverlapuser",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+
+    start_time = datetime.utcnow() + timedelta(hours=1)
+    end_time = start_time + timedelta(hours=2)
+    first_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Overlap First Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    second_shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Overlap Second Location",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    first_shift_id = first_shift_response.json()["id"]
+    second_shift_id = second_shift_response.json()["id"]
+
+    assert authenticated_client.post(
+        "/shifts/users/",
+        json={"user_id": user_id, "shift_id": first_shift_id},
+    ).status_code == 200
+
+    response = authenticated_client.post(
+        "/shifts/users/",
+        json={"user_id": user_id, "shift_id": second_shift_id},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "User is already assigned to an overlapping shift"

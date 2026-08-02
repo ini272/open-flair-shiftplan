@@ -392,6 +392,21 @@ const getShiftPreviewEntries = (shift) => {
   return [...groupEntries, ...userEntries];
 };
 
+const shiftsOverlap = (firstShift, secondShift) => (
+  new Date(firstShift.start_time) < new Date(secondShift.end_time)
+  && new Date(firstShift.end_time) > new Date(secondShift.start_time)
+);
+
+const getAssignedUserIds = (shift) => {
+  const userIds = new Set((shift.users || []).map((user) => user.id));
+
+  (shift.groups || []).forEach((group) => {
+    (group.users || []).forEach((user) => userIds.add(user.id));
+  });
+
+  return userIds;
+};
+
 const getPrintEntryColumns = (entries) => {
   const columns = [[], [], []];
 
@@ -622,10 +637,26 @@ const CoordinatorShiftGrid = ({
       const groupsResponse = await groupService.getGroups();
       const allGroups = groupsResponse.data;
       const individualUsers = allUsers.filter((user) => !user.group_id);
-      const assignedGroupNames = shift.groups?.map((group) => group.name) || [];
-      const availableGroupsBasic = allGroups.filter(
-        (group) => !assignedGroupNames.includes(group.name) && group.is_active
+      const assignedInTargetShift = getAssignedUserIds(shift);
+      const assignedInOverlappingShifts = new Set();
+
+      shiftsWithAssignments
+        .filter((otherShift) => otherShift.id !== shift.id && shiftsOverlap(otherShift, shift))
+        .forEach((otherShift) => {
+          getAssignedUserIds(otherShift).forEach((userId) => {
+            assignedInOverlappingShifts.add(userId);
+          });
+        });
+
+      const unavailableForAssignment = new Set([
+        ...assignedInTargetShift,
+        ...assignedInOverlappingShifts,
+      ]);
+      const hasCapacityFor = (peopleCount) => (
+        shift.capacity === null
+        || assignedInTargetShift.size + peopleCount <= shift.capacity
       );
+      const availableGroupsBasic = allGroups.filter((group) => group.is_active);
 
       const availableGroupsWithUsers = await Promise.all(
         availableGroupsBasic.map(async (group) => {
@@ -641,16 +672,22 @@ const CoordinatorShiftGrid = ({
 
       setAvailableUsers(
         individualUsers.filter(
-          (user) => (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
+          (user) => (
+            !unavailableForAssignment.has(user.id)
+            && (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
+            && hasCapacityFor(1)
+          )
         )
       );
       setAvailableGroups(
         availableGroupsWithUsers.filter((group) => group.users && group.users.length > 0)
-          .filter((group) => group.users.every((user) => !user.is_coordinator))
+          .filter((group) => group.users.every((user) => user.is_active && !user.is_coordinator))
           .filter((group) => group.users.every((user) => availableUserIds.has(user.id)))
+          .filter((group) => group.users.every((user) => !unavailableForAssignment.has(user.id)))
           .filter((group) => group.users.every(
             (user) => (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
           ))
+          .filter((group) => hasCapacityFor(group.users.length))
       );
     } catch (loadError) {
       console.error('Error loading available users/groups:', loadError);
