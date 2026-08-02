@@ -608,6 +608,18 @@ def add_user_to_shift(
                 detail="Users under 16 cannot be assigned to shifts from 20:00 onward",
             )
 
+        if not shift_crud.is_user_available_for_slot(
+            db,
+            shift_id=assignment.shift_id,
+            user_id=assignment.user_id,
+        ):
+            span.add_event("unavailable_user_assignment_blocked", {"user_id": assignment.user_id})
+            span.set_attribute("error", "User is not available for this shift")
+            raise HTTPException(
+                status_code=400,
+                detail="User is not available for this shift",
+            )
+
         # Check capacity
         span.add_event("checking_shift_capacity", {
             "current_users": shift.current_user_count,
@@ -686,6 +698,21 @@ def add_group_to_shift(
             raise HTTPException(
                 status_code=400,
                 detail="Groups with users under 16 cannot be assigned to shifts from 20:00 onward",
+            )
+
+        if not all(
+            shift_crud.is_user_available_for_slot(
+                db,
+                shift_id=assignment.shift_id,
+                user_id=user.id,
+            )
+            for user in group.users
+        ):
+            span.add_event("unavailable_group_assignment_blocked", {"group_id": assignment.group_id})
+            span.set_attribute("error", "Group is not available for this shift")
+            raise HTTPException(
+                status_code=400,
+                detail="Group is not available for this shift",
             )
 
         # Add group to shift (this will check capacity)

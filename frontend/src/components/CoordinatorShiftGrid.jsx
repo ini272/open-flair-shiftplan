@@ -618,6 +618,7 @@ const CoordinatorShiftGrid = ({
     try {
       const usersResponse = await shiftService.getAvailableUsers(shift.id);
       const allUsers = usersResponse.data;
+      const availableUserIds = new Set(allUsers.map((user) => user.id));
       const groupsResponse = await groupService.getGroups();
       const allGroups = groupsResponse.data;
       const individualUsers = allUsers.filter((user) => !user.group_id);
@@ -646,6 +647,7 @@ const CoordinatorShiftGrid = ({
       setAvailableGroups(
         availableGroupsWithUsers.filter((group) => group.users && group.users.length > 0)
           .filter((group) => group.users.every((user) => !user.is_coordinator))
+          .filter((group) => group.users.every((user) => availableUserIds.has(user.id)))
           .filter((group) => group.users.every(
             (user) => (assignmentCountByUserId.get(user.id) || 0) < maxShiftsPerUser
           ))

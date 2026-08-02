@@ -328,3 +328,45 @@ def test_group_available_users(authenticated_client):
     user_ids_after = [user["id"] for user in users_after]
     assert user_id not in user_ids_after
     assert solo_user_id in user_ids_after
+
+
+def test_unavailable_group_cannot_be_manually_assigned(authenticated_client):
+    """Manual group assignments must honour the group's slot opt-out."""
+    group_response = authenticated_client.post(
+        "/groups/",
+        json={"name": "Manual Unavailable Group"},
+    )
+    group_id = group_response.json()["id"]
+
+    user_id = create_participant_user(
+        authenticated_client,
+        "manual-unavailable-group@example.com",
+        "manualunavailablegroup",
+    )["id"]
+    login_as_coordinator(authenticated_client)
+    assert authenticated_client.post(f"/groups/{group_id}/users/{user_id}").status_code == 200
+
+    start_time = datetime.utcnow() + timedelta(hours=1)
+    end_time = start_time + timedelta(hours=2)
+    shift_response = authenticated_client.post(
+        "/shifts/",
+        json={
+            "title": "Manual Unavailable Group Shift",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "capacity": 3,
+        },
+    )
+    shift_id = shift_response.json()["id"]
+
+    assert authenticated_client.post(
+        "/shifts/group-opt-out",
+        json={"group_id": group_id, "shift_id": shift_id},
+    ).status_code == 200
+
+    response = authenticated_client.post(
+        "/shifts/groups/",
+        json={"group_id": group_id, "shift_id": shift_id},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Group is not available for this shift"
